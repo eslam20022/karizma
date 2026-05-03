@@ -145,7 +145,7 @@ export const CustomersList: React.FC = () => {
                         <div>
                           <h3 className="font-bold text-neo-text flex items-center gap-2">
                             {customer.name}
-                            {customer.is_vip && <Star size={14} className="text-yellow-500" fill="currentColor" title="عميل مميز (VIP)" />}
+                            {customer.is_vip && <Star size={14} className="text-yellow-500" fill="currentColor"/>}
                           </h3>
                           <span className="text-[10px] text-gray-400 font-mono" title={customer.id}>
                             {customer.id.substring(0, 8)}... {/* بنعرض جزء من الـ ID عشان ميبوظش الشكل */}

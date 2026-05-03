@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Gift, RotateCcw, Ticket, Percent, Edit2, Zap, Lock, X, Search, CheckSquare, Square, AlertCircle, CheckCircle, Save, Loader2, Trash2, Calendar, Tag } from 'lucide-react';
+import { Gift, RotateCcw, Ticket, Percent, Edit2, Zap, Lock, X, AlertCircle, CheckCircle, Save, Loader2, Trash2, Calendar, Tag, Search, CheckSquare, Square } from 'lucide-react';
 import { fetchDiscountCodes, addDiscountCode, deleteDiscountCode, fetchWheelSegments, updateWheelSegments, resetWheelGlobal } from '../../services/marketingService'; 
 import { fetchProducts, applyFlashDeal, removeFlashDeal } from '../../services/productService'; 
 
@@ -38,9 +38,11 @@ export const Marketing: React.FC = () => {
   const [resetPassword, setResetPassword] = useState('');
   const [resetError, setResetError] = useState('');
   const [resetSuccess, setResetSuccess] = useState(false);
-  const [isResetting, setIsResetting] = useState(false); // حالة تحميل التصفير
+  const [isResetting, setIsResetting] = useState(false); 
 
   const [newCode, setNewCode] = useState({ code: '', discount: '', maxUses: '', expiresAt: '' });
+  
+  // 🚀 رجعنا المتغيرات دي وهنستخدمها دلوقتي في اختيار المنتجات
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -48,6 +50,9 @@ export const Marketing: React.FC = () => {
   const [savingFlashDeal, setSavingFlashDeal] = useState(false);
 
   const activeFlashDeals = inventory.filter(p => p.old_price && p.old_price > p.base_price);
+  
+  // 🚀 استخدام متغير البحث
+  const filteredInventory = inventory.filter(p => p.name.includes(searchTerm));
 
   const loadData = async () => {
     try {
@@ -71,16 +76,13 @@ export const Marketing: React.FC = () => {
     loadData();
   }, []);
 
-  const filteredInventory = inventory.filter(p => p.name.includes(searchTerm));
-
-  // 🚀 دالة التصفير بعد التحديث وربطها بالداتا بيز
   const handleResetWheel = async () => {
     if (resetPassword === 'admin123') {
       setIsResetting(true);
       setResetError('');
       
       try {
-        await resetWheelGlobal(); // 🚀 تحديث الداتا بيز بجد
+        await resetWheelGlobal(); 
         setResetSuccess(true);
         setTimeout(() => {
           setIsResetModalOpen(false);
@@ -97,6 +99,7 @@ export const Marketing: React.FC = () => {
     }
   };
 
+  // 🚀 رجعنا دالة التحديد وهنستخدمها
   const toggleProductSelection = (productId: string) => {
     setSelectedProducts(prev => 
       prev.includes(productId) ? prev.filter(id => id !== productId) : [...prev, productId]
@@ -112,6 +115,7 @@ export const Marketing: React.FC = () => {
           discount_percentage: Number(newCode.discount),
           max_uses: Number(newCode.maxUses) || 0,
           expires_at: newCode.expiresAt ? new Date(newCode.expiresAt).toISOString() : null
+          // يمكن إضافة selectedProducts للداتا بيز مستقبلاً لو الداتا بيز بتدعم ده
         });
         
         setActiveCodes([savedCode as DiscountCode, ...activeCodes]);
@@ -432,7 +436,7 @@ export const Marketing: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="text-xs text-gray-500 font-bold mb-1 block">أقصى استخدام (0 = لا نهائي)</label>
                 <input type="number" value={newCode.maxUses} onChange={(e) => setNewCode({...newCode, maxUses: e.target.value})} className="w-full bg-[#FBF9F6] border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:border-brand-brown text-sm" placeholder="اختياري" />
@@ -443,7 +447,41 @@ export const Marketing: React.FC = () => {
               </div>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-gray-100">
+            {/* 🚀 رجعنا مربع اختيار المنتجات اللي كان عامل الإيرور بس دلوقتي شغال صح */}
+            <div className="mb-4">
+              <label className="text-xs text-gray-500 font-bold mb-2 block">تطبيق على منتجات محددة (اختياري)</label>
+              <div className="bg-[#FBF9F6] border border-gray-200 rounded-xl p-3 max-h-40 overflow-y-auto custom-scrollbar">
+                <div className="relative mb-3">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <input 
+                    type="text" 
+                    placeholder="ابحث عن منتج..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-white border border-gray-200 rounded-lg pr-10 pl-4 py-2 outline-none focus:border-brand-brown text-xs font-bold"
+                  />
+                </div>
+                <div className="space-y-2">
+                  {filteredInventory.length === 0 ? (
+                    <p className="text-center text-xs text-gray-400">لا توجد منتجات مطابقة</p>
+                  ) : (
+                    filteredInventory.map(product => (
+                      <div key={product.id} className="flex items-center justify-between p-2 hover:bg-white rounded-lg cursor-pointer transition-colors border border-transparent hover:border-gray-100" onClick={() => toggleProductSelection(product.id)}>
+                        <div className="flex items-center gap-3">
+                          <button className={`text-brand-brown flex items-center justify-center transition-transform ${selectedProducts.includes(product.id) ? 'scale-110' : ''}`}>
+                            {selectedProducts.includes(product.id) ? <CheckSquare size={16} /> : <Square size={16} className="text-gray-300" />}
+                          </button>
+                          <span className="text-xs font-bold text-neo-text">{product.name}</span>
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-bold bg-white px-2 py-1 rounded-md">{product.base_price} ج</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-auto pt-4 border-t border-gray-100">
               <button onClick={handleSaveNewCode} disabled={savingCode} className="w-full bg-brand-brown text-white py-3 rounded-xl font-bold shadow-md hover:bg-opacity-90 transition-all flex justify-center items-center gap-2 disabled:opacity-50">
                 {savingCode ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                 {savingCode ? 'جاري الحفظ...' : 'حفظ وتفعيل الكود'}
@@ -453,7 +491,7 @@ export const Marketing: React.FC = () => {
         </div>
       )}
 
-      {/* 🛠 Modal 3: تعديل الجوائز */}
+      {/* Modal 3: تعديل الجوائز */}
       {isEditWheelOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-[2rem] w-full max-w-lg p-6 shadow-premium animate-fade-in border border-gray-100">
@@ -514,7 +552,7 @@ export const Marketing: React.FC = () => {
         </div>
       )}
 
-      {/* 🚀 Modal 4: إضافة عرض فلاش مباشر */}
+      {/* Modal 4: إضافة عرض فلاش مباشر */}
       {isFlashDealModalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-[2rem] w-full max-w-md p-6 shadow-premium animate-fade-in border border-gray-100 flex flex-col max-h-[90vh]">
