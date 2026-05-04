@@ -36,26 +36,57 @@ export const fetchProducts = async () => {
 // ==========================================
 // 3. إدخال منتج جديد بالكامل للمخزن
 // ==========================================
+// ==========================================
+// 3. إدخال منتج جديد بالكامل للمخزن (مع رفع الصور) 🚀
+// ==========================================
 export const addCompleteProduct = async (
   productData: { category_id: string; name: string; description: string; base_price: number },
-  variantsData: { size: string; color: string; stock_quantity: number; sku: string }[]
+  variantsData: { size: string; color: string; stock_quantity: number; sku: string }[],
+  imageFiles: File[] // 🚀 استقيال مصفوفة الصور هنا
 ) => {
-  // أ. إدخال المنتج الأساسي
+  
+  // أ. رفع الصور للـ Storage أولاً
+  const imageUrls: string[] = [];
+  
+  if (imageFiles && imageFiles.length > 0) {
+    for (const file of imageFiles) {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const filePath = `images/${fileName}`;
+
+      // رفع الصورة لـ bucket اسمه products (تأكد إنه موجود و Public في Supabase)
+      const { error: uploadError } = await supabase.storage
+        .from('products') 
+        .upload(filePath, file);
+
+      if (uploadError) throw new Error(`فشل رفع الصورة: ${uploadError.message}`);
+
+      // جلب الرابط العام للصورة
+      const { data } = supabase.storage.from('products').getPublicUrl(filePath);
+      imageUrls.push(data.publicUrl);
+    }
+  }
+
+  // ب. إدخال المنتج الأساسي (مع حفظ الصور)
   const { data: newProduct, error: productError } = await supabase
     .from('products')
-    .insert([productData])
+    .insert([{
+      ...productData,
+      image_url: imageUrls.length > 0 ? imageUrls[0] : null, // أول صورة كصورة أساسية (عشان السلة والمتجر)
+      image_urls: imageUrls // حفظ كل الصور في العمود الجديد
+    }])
     .select()
     .single();
 
   if (productError) throw new Error(`فشل إضافة المنتج: ${productError.message}`);
 
-  // ب. تجهيز المقاسات وربطها بالمنتج الجديد
+  // ج. تجهيز المقاسات وربطها بالمنتج الجديد
   const variantsToInsert = variantsData.map(variant => ({
     ...variant,
     product_id: newProduct.id,
   }));
 
-  // ج. إدخال المقاسات
+  // د. إدخال المقاسات
   const { error: variantsError } = await supabase
     .from('product_variants')
     .insert(variantsToInsert);

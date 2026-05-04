@@ -11,9 +11,9 @@ export const AddProduct: React.FC = () => {
   // 1. حالة المنتج الأساسي
   const [product, setProduct] = useState({ name: '', description: '', base_price: '', category_id: '' });
   
-  // 2. 🚀 حالة الصورة (ملف الصورة والمعاينة بتاعتها)
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string>('');
+  // 2. 🚀 حالة الصور (مصفوفة ملفات ومصفوفة لمعاينة الروابط)
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   
   // 3. حالة المقاسات والألوان
   const [variants, setVariants] = useState([{ size: '', color: '', stock_quantity: 0, sku: '' }]);
@@ -22,19 +22,22 @@ export const AddProduct: React.FC = () => {
     fetchCategories().then(setCategories).catch(err => setMessage({ text: err.message, isError: true }));
   }, []);
 
-  // دالة التعامل مع اختيار الصورة
+  // 🚀 دالة التعامل مع اختيار الصور (تقبل أكتر من صورة)
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file)); // عمل رابط وهمي للمعاينة
+    if (e.target.files) {
+      const filesArray = Array.from(e.target.files); // تحويل الـ FileList لمصفوفة
+      
+      setImageFiles(prev => [...prev, ...filesArray]); // إضافة الملفات الجديدة للقديمة
+      
+      const previewsArray = filesArray.map(file => URL.createObjectURL(file));
+      setImagePreviews(prev => [...prev, ...previewsArray]); // إضافة روابط المعاينة
     }
   };
 
-  // دالة إزالة الصورة
-  const removeImage = () => {
-    setImageFile(null);
-    setImagePreview('');
+  // 🚀 دالة إزالة صورة معينة بناءً على رقمها (Index)
+  const removeImage = (indexToRemove: number) => {
+    setImageFiles(prev => prev.filter((_, index) => index !== indexToRemove));
+    setImagePreviews(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
   const addVariantRow = () => {
@@ -55,21 +58,22 @@ export const AddProduct: React.FC = () => {
     try {
       if (!product.category_id) throw new Error("يجب اختيار القسم أولاً!");
       if (variants.length === 0 || !variants[0].size) throw new Error("يجب إضافة مقاس واحد على الأقل!");
-      if (!imageFile) throw new Error("يجب إرفاق صورة للمنتج!"); // 🚀 تأكيد وجود الصورة
+      if (imageFiles.length === 0) throw new Error("يجب إرفاق صورة واحدة على الأقل للمنتج!"); // 🚀 تأكيد وجود صور
 
-      // (في خطوة الداتا بيز: هنرفع الصورة الأول لـ Supabase Storage وناخد الرابط بتاعها نبعته مع البيانات)
-      
+      // 🚀 هنبعت الـ imageFiles (المصفوفة كلها) لدالة الداتا بيز عشان ترفعهم كلهم
       await addCompleteProduct(
         { ...product, base_price: Number(product.base_price) },
-        variants.map(v => ({ ...v, stock_quantity: Number(v.stock_quantity) }))
+        variants.map(v => ({ ...v, stock_quantity: Number(v.stock_quantity) })),
+        imageFiles // <== ضفنا مصفوفة الصور هنا
       );
 
-      setMessage({ text: 'تم إضافة المنتج للمخزن بنجاح!', isError: false });
+      setMessage({ text: 'تم إضافة المنتج وصوره للمخزن بنجاح!', isError: false });
       
       // تفريغ الحقول بعد النجاح
       setProduct({ name: '', description: '', base_price: '', category_id: product.category_id });
       setVariants([{ size: '', color: '', stock_quantity: 0, sku: '' }]);
-      removeImage();
+      setImageFiles([]);
+      setImagePreviews([]);
     } catch (err: any) {
       setMessage({ text: err.message, isError: true });
     } finally {
@@ -96,37 +100,51 @@ export const AddProduct: React.FC = () => {
 
       <form onSubmit={handleSubmit} className="space-y-6">
         
-        {/* القسم الأول: الصورة الأساسية للمنتج */}
-        <div className="bg-white shadow-soft p-6 md:p-8 rounded-[2rem] border border-gray-100 flex flex-col items-center justify-center">
+        {/* القسم الأول: صور المنتج */}
+        <div className="bg-white shadow-soft p-6 md:p-8 rounded-[2rem] border border-gray-100">
           <h3 className="text-lg font-black text-neo-text w-full border-b border-gray-100 pb-4 mb-6 flex items-center gap-2">
             <div className="w-2 h-6 bg-brand-sand rounded-full"></div>
-            صورة المنتج
+            صور المنتج (يمكنك اختيار أكثر من صورة)
           </h3>
           
-          <div className="relative w-full max-w-sm aspect-square bg-[#FBF9F6] rounded-[2rem] border-2 border-dashed border-gray-300 flex flex-col items-center justify-center hover:border-brand-sand transition-colors overflow-hidden group cursor-pointer">
-            {imagePreview ? (
-              <>
-                <img src={imagePreview} alt="Preview" className="w-full h-full object-cover mix-blend-multiply" />
+          {/* 🚀 عرض الصور بشكل شبكة (Grid) */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            
+            {/* لوب لعرض الصور اللي تم اختيارها */}
+            {imagePreviews.map((preview, index) => (
+              <div key={index} className="relative aspect-square bg-[#FBF9F6] rounded-2xl border border-gray-200 overflow-hidden group">
+                <img src={preview} alt={`Preview ${index}`} className="w-full h-full object-cover mix-blend-multiply" />
                 <button 
                   type="button"
-                  onClick={(e) => { e.preventDefault(); removeImage(); }}
-                  className="absolute top-4 right-4 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
+                  onClick={() => removeImage(index)}
+                  className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center shadow-md hover:scale-110 transition-transform opacity-0 group-hover:opacity-100"
                 >
-                  <X size={16} />
+                  <X size={14} />
                 </button>
-              </>
-            ) : (
-              <>
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  onChange={handleImageChange} 
-                  className="absolute inset-0 opacity-0 cursor-pointer z-10" 
-                />
-                <ImagePlus size={48} className="text-gray-300 mb-4 group-hover:text-brand-sand transition-colors" />
-                <span className="font-bold text-gray-500 text-sm">اضغط هنا لاختيار صورة</span>
-              </>
-            )}
+                {/* تمييز الصورة الأولى كصورة أساسية */}
+                {index === 0 && (
+                  <span className="absolute bottom-2 left-2 bg-brand-brown text-white text-[9px] px-2 py-1 rounded-md font-bold shadow-sm">
+                    الأساسية
+                  </span>
+                )}
+              </div>
+            ))}
+
+            {/* زر إضافة صور جديدة */}
+            <div className="relative aspect-square bg-[#FBF9F6] rounded-2xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center hover:border-brand-sand hover:bg-brand-sand/5 transition-colors overflow-hidden group cursor-pointer">
+              <input 
+                type="file" 
+                accept="image/*" 
+                multiple // 🚀 دي اللي بتسمح باختيار أكتر من صورة
+                onChange={handleImageChange} 
+                className="absolute inset-0 opacity-0 cursor-pointer z-10" 
+              />
+              <ImagePlus size={32} className="text-gray-400 mb-2 group-hover:text-brand-sand transition-colors" />
+              <span className="font-bold text-gray-500 text-xs text-center px-2">
+                {imagePreviews.length === 0 ? "اضغط لاختيار الصور" : "إضافة المزيد"}
+              </span>
+            </div>
+
           </div>
         </div>
 
