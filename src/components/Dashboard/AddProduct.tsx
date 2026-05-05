@@ -8,40 +8,34 @@ export const AddProduct: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ text: '', isError: false });
 
-  // 1. حالة المنتج الأساسي
   const [product, setProduct] = useState({ name: '', description: '', base_price: '', category_id: '' });
   
-  // 2. 🚀 حالة الصور (مصفوفة ملفات ومصفوفة لمعاينة الروابط)
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   
-  // 3. حالة المقاسات والألوان
-  const [variants, setVariants] = useState([{ size: '', color: '', stock_quantity: 0, sku: '' }]);
+  // 🚀 خلينا القيمة الافتراضية للون كود Hex عشان الـ Color Picker يشتغل صح
+  const [variants, setVariants] = useState([{ size: '', color: '#000000', stock_quantity: 0, sku: '' }]);
 
   useEffect(() => {
     fetchCategories().then(setCategories).catch(err => setMessage({ text: err.message, isError: true }));
   }, []);
 
-  // 🚀 دالة التعامل مع اختيار الصور (تقبل أكتر من صورة)
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const filesArray = Array.from(e.target.files); // تحويل الـ FileList لمصفوفة
-      
-      setImageFiles(prev => [...prev, ...filesArray]); // إضافة الملفات الجديدة للقديمة
-      
+      const filesArray = Array.from(e.target.files); 
+      setImageFiles(prev => [...prev, ...filesArray]); 
       const previewsArray = filesArray.map(file => URL.createObjectURL(file));
-      setImagePreviews(prev => [...prev, ...previewsArray]); // إضافة روابط المعاينة
+      setImagePreviews(prev => [...prev, ...previewsArray]); 
     }
   };
 
-  // 🚀 دالة إزالة صورة معينة بناءً على رقمها (Index)
   const removeImage = (indexToRemove: number) => {
     setImageFiles(prev => prev.filter((_, index) => index !== indexToRemove));
     setImagePreviews(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
   const addVariantRow = () => {
-    setVariants([...variants, { size: '', color: '', stock_quantity: 0, sku: '' }]);
+    setVariants([...variants, { size: '', color: '#000000', stock_quantity: 0, sku: '' }]); // 🚀 قيمة اللون هنا كمان
   };
 
   const updateVariant = (index: number, field: string, value: string | number) => {
@@ -58,20 +52,18 @@ export const AddProduct: React.FC = () => {
     try {
       if (!product.category_id) throw new Error("يجب اختيار القسم أولاً!");
       if (variants.length === 0 || !variants[0].size) throw new Error("يجب إضافة مقاس واحد على الأقل!");
-      if (imageFiles.length === 0) throw new Error("يجب إرفاق صورة واحدة على الأقل للمنتج!"); // 🚀 تأكيد وجود صور
+      if (imageFiles.length === 0) throw new Error("يجب إرفاق صورة واحدة على الأقل للمنتج!"); 
 
-      // 🚀 هنبعت الـ imageFiles (المصفوفة كلها) لدالة الداتا بيز عشان ترفعهم كلهم
       await addCompleteProduct(
         { ...product, base_price: Number(product.base_price) },
         variants.map(v => ({ ...v, stock_quantity: Number(v.stock_quantity) })),
-        imageFiles // <== ضفنا مصفوفة الصور هنا
+        imageFiles 
       );
 
       setMessage({ text: 'تم إضافة المنتج وصوره للمخزن بنجاح!', isError: false });
       
-      // تفريغ الحقول بعد النجاح
       setProduct({ name: '', description: '', base_price: '', category_id: product.category_id });
-      setVariants([{ size: '', color: '', stock_quantity: 0, sku: '' }]);
+      setVariants([{ size: '', color: '#000000', stock_quantity: 0, sku: '' }]);
       setImageFiles([]);
       setImagePreviews([]);
     } catch (err: any) {
@@ -107,10 +99,7 @@ export const AddProduct: React.FC = () => {
             صور المنتج (يمكنك اختيار أكثر من صورة)
           </h3>
           
-          {/* 🚀 عرض الصور بشكل شبكة (Grid) */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            
-            {/* لوب لعرض الصور اللي تم اختيارها */}
             {imagePreviews.map((preview, index) => (
               <div key={index} className="relative aspect-square bg-[#FBF9F6] rounded-2xl border border-gray-200 overflow-hidden group">
                 <img src={preview} alt={`Preview ${index}`} className="w-full h-full object-cover mix-blend-multiply" />
@@ -121,7 +110,6 @@ export const AddProduct: React.FC = () => {
                 >
                   <X size={14} />
                 </button>
-                {/* تمييز الصورة الأولى كصورة أساسية */}
                 {index === 0 && (
                   <span className="absolute bottom-2 left-2 bg-brand-brown text-white text-[9px] px-2 py-1 rounded-md font-bold shadow-sm">
                     الأساسية
@@ -130,12 +118,11 @@ export const AddProduct: React.FC = () => {
               </div>
             ))}
 
-            {/* زر إضافة صور جديدة */}
             <div className="relative aspect-square bg-[#FBF9F6] rounded-2xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center hover:border-brand-sand hover:bg-brand-sand/5 transition-colors overflow-hidden group cursor-pointer">
               <input 
                 type="file" 
                 accept="image/*" 
-                multiple // 🚀 دي اللي بتسمح باختيار أكتر من صورة
+                multiple 
                 onChange={handleImageChange} 
                 className="absolute inset-0 opacity-0 cursor-pointer z-10" 
               />
@@ -144,7 +131,6 @@ export const AddProduct: React.FC = () => {
                 {imagePreviews.length === 0 ? "اضغط لاختيار الصور" : "إضافة المزيد"}
               </span>
             </div>
-
           </div>
         </div>
 
@@ -197,10 +183,28 @@ export const AddProduct: React.FC = () => {
                   <label className={labelClass}>المقاس</label>
                   <input type="text" required value={variant.size} onChange={e => updateVariant(index, 'size', e.target.value)} className={inputClass} placeholder="M, L, 42..." />
                 </div>
+                
+                {/* 🚀 التعديل السحري: باليتة الألوان (Color Picker) */}
                 <div>
                   <label className={labelClass}>اللون</label>
-                  <input type="text" required value={variant.color} onChange={e => updateVariant(index, 'color', e.target.value)} className={inputClass} placeholder="أسود، أحمر..." />
+                  <div className="flex items-center gap-2 bg-white rounded-xl border border-transparent focus-within:border-brand-sand px-2 py-1 transition-all h-[46px]">
+                    <input 
+                      type="color" 
+                      required 
+                      value={variant.color} 
+                      onChange={e => updateVariant(index, 'color', e.target.value)} 
+                      className="w-8 h-8 rounded-lg cursor-pointer border-0 bg-transparent p-0" 
+                    />
+                    <input 
+                      type="text" 
+                      value={variant.color.toUpperCase()} 
+                      onChange={e => updateVariant(index, 'color', e.target.value)} 
+                      className="w-full bg-transparent outline-none text-neo-text font-bold text-sm" 
+                      dir="ltr"
+                    />
+                  </div>
                 </div>
+
                 <div>
                   <label className={labelClass}>الكمية بالمخزن</label>
                   <input type="number" required min="0" value={variant.stock_quantity} onChange={e => updateVariant(index, 'stock_quantity', Number(e.target.value))} className={inputClass} />
@@ -214,7 +218,6 @@ export const AddProduct: React.FC = () => {
           </div>
         </div>
 
-        {/* زر الحفظ النهائي */}
         <button type="submit" disabled={loading} className="w-full py-4 rounded-2xl font-black text-lg text-white bg-brand-brown shadow-md hover:bg-opacity-90 hover:-translate-y-1 transition-all disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center gap-3">
           {loading ? <Loader2 size={24} className="animate-spin" /> : <Save size={24} />}
           {loading ? 'جاري رفع المنتج لقاعدة البيانات...' : 'حفظ المنتج في المخزن'}

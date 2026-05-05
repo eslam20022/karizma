@@ -10,6 +10,12 @@ export interface Product {
   name: string;
   description: string;
   base_price: number;
+  
+  // 🚀 نقلناهم هنا للمنتج الأساسي
+  image_url?: string | null;
+  image_urls?: string[] | null;
+  old_price?: number | null;
+  
   created_at: string;
 }
 

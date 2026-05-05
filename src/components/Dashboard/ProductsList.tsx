@@ -11,7 +11,7 @@ export const ProductsList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState('');
 
-  // 🚀 جلب المنتجات من قاعدة البيانات أول ما الصفحة تفتح
+  // 🚀 جلب المنتجات من قاعدة البيانات
   useEffect(() => {
     const loadProducts = async () => {
       try {
@@ -19,25 +19,24 @@ export const ProductsList: React.FC = () => {
         const data = await fetchProducts();
         setProducts(data);
       } catch (err: any) {
-        setError('حصل مشكلة في تحميل المنتجات، تأكد من الاتصال بالإنترنت.');
+        setError('حصل مشكلة في تحميل المنتجات.');
         console.error(err);
       } finally {
         setLoading(false);
       }
     };
-
     loadProducts();
   }, []);
 
-  // فلترة المنتجات بالبحث
-  const filteredProducts = products.filter(product => 
-    product.name.includes(searchTerm)
-  );
+  // 🚀 فلترة آمنة جداً
+  const filteredProducts = products.filter(product => {
+    if (!product || !product.name) return false; 
+    return product.name.toLowerCase().includes(searchTerm.toLowerCase());
+  });
 
   return (
     <div className="space-y-8 animate-fade-in font-['Tajawal',sans-serif]">
       
-      {/* 📋 هيدر الصفحة والبحث */}
       <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-gray-200 pb-6">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-brand-brown text-white flex items-center justify-center shadow-md shrink-0">
@@ -54,7 +53,7 @@ export const ProductsList: React.FC = () => {
             <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input 
               type="text" 
-              placeholder="ابحث عن منتج في المخزن..." 
+              placeholder="ابحث عن منتج..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full bg-white border border-gray-200 rounded-xl pr-12 pl-4 py-3 outline-none focus:border-brand-sand focus:ring-2 focus:ring-brand-sand/20 text-sm font-bold text-neo-text transition-all shadow-sm"
@@ -66,14 +65,12 @@ export const ProductsList: React.FC = () => {
         </div>
       </header>
 
-      {/* ⚠️ رسالة الخطأ لو حصل مشكلة */}
       {error && (
         <div className="bg-red-50 text-red-600 p-4 rounded-xl font-bold text-center border border-red-100">
           {error}
         </div>
       )}
 
-      {/* ⏳ شاشة التحميل */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <Loader2 size={48} className="text-brand-brown animate-spin" />
@@ -81,14 +78,12 @@ export const ProductsList: React.FC = () => {
         </div>
       ) : (
         <>
-          {/* 🛍️ شبكة المنتجات (مربوطة بالداتا الحقيقية) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredProducts.map((product) => (
               <ProductCard key={product.id} product={product} />
             ))}
           </div>
 
-          {/* 📭 لو المخزن فاضي أو مفيش نتايج بحث */}
           {!loading && filteredProducts.length === 0 && (
             <div className="text-center py-16 flex flex-col items-center justify-center gap-4 bg-white rounded-[2rem] border border-gray-100 border-dashed shadow-sm">
               <div className="w-20 h-20 bg-[#FBF9F6] rounded-full flex items-center justify-center text-gray-300">
@@ -96,7 +91,6 @@ export const ProductsList: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-xl font-black text-neo-text mb-2">المخزن فارغ حالياً!</h3>
-                <p className="text-gray-500 font-bold text-sm">لم نتمكن من العثور على أي منتجات مطابقة.</p>
               </div>
               <Link to="/add-product" className="mt-4 bg-[#FBF9F6] text-brand-brown border border-gray-200 px-6 py-3 rounded-xl font-bold hover:bg-brand-brown hover:text-white transition-colors flex items-center gap-2 shadow-sm">
                 <Plus size={18} /> أضف منتجك الأول
@@ -105,7 +99,6 @@ export const ProductsList: React.FC = () => {
           )}
         </>
       )}
-
     </div>
   );
 };
