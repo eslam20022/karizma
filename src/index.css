@@ -1,30 +1,86 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@layer base {
-  body {
-    /* تطبيق الألوان الفخمة اللي حطيناها في الـ config */
-    @apply bg-[#FBF9F6] dark:bg-[#121212] text-[#3D3D3D] dark:text-[#F1F1F1] antialiased;
-    direction: rtl;
+/* ----------------------------------------------------------- */
+/* 🖨️ قواعد الطباعة الصارمة (للفاتورة والباركود معاً) 🖨️ */
+/* ----------------------------------------------------------- */
+@media print {
+  /* 1. إخفاء صريح لأي قوائم، هيدر، أو عناصر واخدة كلاس الإخفاء */
+  header, nav, aside, footer, .print\:hidden {
+    display: none !important;
   }
-}
 
-/* شريط تمرير (Scrollbar) احترافي وناعم */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: #EAE6DF;
-  border-radius: 10px;
-}
-.dark .custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: #2A2A2A;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: #D4A373;
+  /* 2. إلغاء الطول الافتراضي للشاشة (لمنع الورق الفاضي) */
+  html, body, #root, .min-h-screen, main {
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  /* 3. إخفاء باقي العناصر الأساسية */
+  body * {
+    visibility: hidden;
+  }
+  
+  /* 4. إظهار الفاتورة والباركود وكل ما بداخلهما، مع جعل الخط عريض جداً */
+  .print-receipt-only, .print-receipt-only *,
+  .print-barcode-only, .print-barcode-only * {
+    visibility: visible !important;
+    font-weight: 900 !important; /* 🚀 التريكة اللي هتخلي الخط تقيل وواضح جداً */
+    color: black !important;
+  }
+  
+  /* 5. إعدادات الفاتورة */
+  .print-receipt-only {
+    position: relative !important; 
+    margin: 0 auto !important; 
+    left: 0 !important;
+    top: 0 !important;
+    
+    width: 100% !important; 
+    max-width: 76mm !important; 
+    
+    padding: 5mm 4mm 2mm 4mm !important; 
+    box-sizing: border-box !important; 
+    
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+    
+    page-break-after: avoid !important;
+    page-break-before: avoid !important;
+  }
+
+  /* 6. إعدادات طباعة الباركود (الاستيكر) */
+/* ====================================== */
+  /* 🖨️ إعدادات طباعة الباركود (الاستيكر) */
+  /* ====================================== */
+  .print-barcode-only {
+    position: absolute !important; 
+    left: 0 !important;
+    top: 0 !important;
+    
+    /* السحر كله هنا: 100% عرض وطول عشان يملى الاستيكر بالظبط */
+    width: 100vw !important; 
+    height: 100vh !important; 
+    
+    /* هامش أمان من برة 1.5 ملي عشان البوردر الأسود ميلمسش الحرف ويتقص */
+    padding: 0 1.5mm 0 0 !important; 
+    box-sizing: border-box !important; 
+    
+    background: white !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    
+    page-break-after: avoid !important;
+    page-break-before: avoid !important;
+  }
+
+  /* 7. إجبار الطابعة على إلغاء الهوامش */
+  @page {
+    margin: 0;
+  }
 }

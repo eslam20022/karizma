@@ -1,46 +1,58 @@
 import { supabase } from '../config/supabaseClient';
 
-export const fetchDashboardStats = async (timeFilter: string) => {
-  let query = supabase.from('orders').select('total_amount, created_at', { count: 'exact' });
+// 1. 📊 جلب إحصائيات الوردية (بيجيب الفواتير اللي لسه متقفلتش بس!)
+export const fetchDashboardStats = async () => {
+  const { data: sales, error } = await supabase
+    .from('sales')
+    .select('*')
+    .eq('is_closed', false) // 🔥 السر هنا: هات المفتوح بس
+    .order('created_at', { ascending: false });
 
-  // 📅 لوجيك الفلترة الزمنية
-  const now = new Date();
-  if (timeFilter === 'this_month') {
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    query = query.gte('created_at', startOfMonth);
-  } else if (timeFilter === 'last_month') {
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0).toISOString();
-    query = query.gte('created_at', startOfLastMonth).lte('created_at', endOfLastMonth);
+  if (error) {
+    console.error("خطأ في جلب بيانات المبيعات:", error.message);
+    throw new Error("فشل جلب المبيعات");
   }
 
-  const { data: orders, count: totalOrders, error: ordersError } = await query;
-  
-  if (ordersError) throw ordersError;
+  const salesData = sales || [];
+  const totalSales = salesData.reduce((sum, sale) => sum + Number(sale.total_amount), 0);
+  const totalInvoices = salesData.length;
 
-  // حساب إجمالي المبيعات (باستثناء المرفوض)
-  const totalSales = orders?.reduce((sum, order) => sum + Number(order.total_amount), 0) || 0;
-
-  // جلب إجمالي العملاء
-  const { count: totalCustomers, error: custError } = await supabase
-    .from('customers')
-    .select('*', { count: 'exact', head: true });
-
-  if (custError) throw custError;
-
-  // جلب أحدث 5 طلبات
-  const { data: recentOrders, error: recentError } = await supabase
-    .from('orders')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(5);
-
-  if (recentError) throw recentError;
+  let itemsSold = 0;
+  salesData.forEach(sale => {
+    if (sale.items && Array.isArray(sale.items)) {
+      itemsSold += sale.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0);
+    }
+  });
 
   return {
     totalSales,
-    totalOrders: totalOrders || 0,
-    totalCustomers: totalCustomers || 0,
-    recentOrders: recentOrders || []
+    totalInvoices,
+    itemsSold,
+    recentSales: salesData.slice(0, 5)
   };
+};
+
+// 2. 🔒 دالة التقفيل (بتقفل كل الفواتير المفتوحة بضغطة واحدة)
+export const closeGlobalShift = async () => {
+  const { error } = await supabase
+    .from('sales')
+    .update({ is_closed: true })
+    .eq('is_closed', false); // حول كل المفتوح لمقفول
+
+  if (error) {
+    console.error("خطأ في تقفيل الوردية:", error.message);
+    throw new Error("فشل في تقفيل الوردية في السيرفر");
+  }
+  return true;
+};
+
+// 3. 📜 جلب كل المبيعات (لصفحة اليوميات - بتجيب كله مفتوح ومقفول)
+export const fetchAllSalesHistory = async () => {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error("فشل في جلب سجل المبيعات");
+  return data || [];
 };

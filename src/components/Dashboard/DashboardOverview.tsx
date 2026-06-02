@@ -1,147 +1,236 @@
-import React, { useState, useEffect } from 'react';
-import { DollarSign, ShoppingBag, Users, TrendingUp, ArrowLeft, Clock, CheckCircle, Calendar, Loader2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { fetchDashboardStats } from '../../services/dashboardService';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Receipt, Calendar, Loader2, FileText, CalendarDays, TrendingUp, DollarSign } from 'lucide-react';
+import { fetchAllSalesHistory } from '../../services/dashboardService';
 
 export const DashboardOverview: React.FC = () => {
-  const [timeFilter, setTimeFilter] = useState('all_time');
-  const [stats, setStats] = useState<any>(null);
+  const [sales, setSales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'invoices' | 'days' | 'months'>('months'); // 🚀 أضفنا تاب الشهور
 
   useEffect(() => {
-    const loadStats = async () => {
+    const loadHistory = async () => {
       try {
-        setLoading(true);
-        const data = await fetchDashboardStats(timeFilter);
-        setStats(data);
+        const data = await fetchAllSalesHistory();
+        setSales(data);
       } catch (error) {
-        console.error("خطأ في تحميل الإحصائيات", error);
+        console.error(error);
       } finally {
         setLoading(false);
       }
     };
-    loadStats();
-  }, [timeFilter]);
+    loadHistory();
+  }, []);
 
-  if (loading && !stats) {
+  // 🧠 1. لوجيك تجميع المبيعات حسب اليوم
+  const dailySummaries = useMemo(() => {
+    return sales.reduce((acc: any, sale: any) => {
+      const date = new Date(sale.created_at).toLocaleDateString('ar-EG');
+      if (!acc[date]) {
+        acc[date] = { date, totalAmount: 0, invoiceCount: 0, itemsSold: 0 };
+      }
+      acc[date].totalAmount += Number(sale.total_amount);
+      acc[date].invoiceCount += 1;
+      
+      if (sale.items && Array.isArray(sale.items)) {
+        acc[date].itemsSold += sale.items.reduce((sum: number, item: any) => sum + item.quantity, 0);
+      }
+      return acc;
+    }, {});
+  }, [sales]);
+
+  // 🧠 2. لوجيك تجميع المبيعات والأرباح حسب الشهر (الإضافة الجديدة)
+  const monthlySummaries = useMemo(() => {
+    return sales.reduce((acc: any, sale: any) => {
+      // استخراج اسم الشهر والسنة (مثال: يونيو 2026)
+      const dateObj = new Date(sale.created_at);
+      const monthKey = dateObj.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
+      
+      if (!acc[monthKey]) {
+        acc[monthKey] = { 
+          month: monthKey, 
+          totalSales: 0,    // إجمالي اللي دخل الدرج
+          totalCost: 0,     // رأس مال البضاعة اللي اتباعت
+          totalProfit: 0,   // المكسب الصافي
+          itemsSold: 0 
+        };
+      }
+      
+      // جمع إيرادات الفواتير
+      acc[monthKey].totalSales += Number(sale.total_amount);
+      
+      // حساب التكلفة للمنتجات المباعة
+      if (sale.items && Array.isArray(sale.items)) {
+        sale.items.forEach((item: any) => {
+          acc[monthKey].itemsSold += item.quantity;
+          // لو المنتج ليه سعر تكلفة بنضربه في الكمية المباعة، ولو ملوش بنعتبر تكلفتها 0
+          const itemCost = (item.cost_price || 0) * item.quantity;
+          acc[monthKey].totalCost += itemCost;
+        });
+      }
+      
+      // المكسب = الإيرادات - التكلفة
+      acc[monthKey].totalProfit = acc[monthKey].totalSales - acc[monthKey].totalCost;
+
+      return acc;
+    }, {});
+  }, [sales]);
+
+  const daysArray = Object.values(dailySummaries);
+  const monthsArray = Object.values(monthlySummaries);
+
+  if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <Loader2 size={48} className="text-brand-brown animate-spin" />
-        <p className="text-gray-500 font-bold">جاري تحديث الأرقام...</p>
+      <div className="flex justify-center items-center h-full">
+        <Loader2 size={40} className="text-brand-brown animate-spin" />
       </div>
     );
   }
 
-  const cards = [
-    { title: 'إجمالي المبيعات', value: `${stats.totalSales.toLocaleString()} ج.م`, icon: <DollarSign size={24} />, color: 'text-green-500', bg: 'bg-green-50' },
-    { title: 'إجمالي الطلبات', value: stats.totalOrders, icon: <ShoppingBag size={24} />, color: 'text-brand-brown', bg: 'bg-brand-brown/10' },
-    { title: 'إجمالي العملاء', value: stats.totalCustomers, icon: <Users size={24} />, color: 'text-blue-500', bg: 'bg-blue-50' },
-    { title: 'النمو', value: '+12%', icon: <TrendingUp size={24} />, color: 'text-brand-sand', bg: 'bg-brand-sand/10' },
-  ];
-
   return (
-    <div className="space-y-8 animate-fade-in font-['Tajawal',sans-serif]">
-      
-      {/* 🚀 الترحيب + الفلتر */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 border-b border-gray-200 pb-6">
+    <div className="space-y-6 animate-fade-in font-['Tajawal',sans-serif] pb-10">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-black text-neo-text">مرحباً بك في كاريزما 👋</h1>
-          <p className="text-gray-500 text-sm mt-2 font-bold">إليك ملخص أداء المتجر الحالي.</p>
+          <h1 className="text-2xl md:text-3xl font-black text-neo-text flex items-center gap-2">
+            <FileText className="text-brand-brown" /> التقارير المالية والفواتير
+          </h1>
+          <p className="text-gray-500 text-sm mt-1 font-bold">متابعة دقيقة للمبيعات، الإيرادات، والأرباح الصافية.</p>
         </div>
+      </div>
+
+      <div className="bg-white rounded-[2rem] shadow-soft border border-gray-100 overflow-hidden">
         
-        <div className="relative w-full sm:w-48">
-          <Calendar className="absolute right-4 top-1/2 -translate-y-1/2 text-brand-sand" size={18} />
-          <select 
-            value={timeFilter}
-            onChange={(e) => setTimeFilter(e.target.value)}
-            className="w-full bg-white border border-gray-200 rounded-xl pr-12 pl-4 py-3 outline-none focus:border-brand-sand focus:ring-2 focus:ring-brand-sand/20 text-sm font-bold text-gray-700 shadow-sm appearance-none cursor-pointer"
+        {/* ================= التابات ================= */}
+        <div className="flex border-b border-gray-100 bg-[#FBF9F6]">
+          <button 
+            onClick={() => setActiveTab('months')}
+            className={`flex-1 py-4 font-black flex items-center justify-center gap-2 transition-all ${activeTab === 'months' ? 'bg-white text-brand-brown border-b-2 border-brand-brown shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
           >
-            <option value="this_month">الشهر الحالي</option>
-            <option value="last_month">الشهر السابق</option>
-            <option value="all_time">كل الأوقات</option>
-          </select>
+            <CalendarDays size={20} /> التقارير الشهرية
+          </button>
+          <button 
+            onClick={() => setActiveTab('days')}
+            className={`flex-1 py-4 font-black flex items-center justify-center gap-2 transition-all ${activeTab === 'days' ? 'bg-white text-brand-brown border-b-2 border-brand-brown shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <Calendar size={20} /> اليوميات المقفلة
+          </button>
+          <button 
+            onClick={() => setActiveTab('invoices')}
+            className={`flex-1 py-4 font-black flex items-center justify-center gap-2 transition-all ${activeTab === 'invoices' ? 'bg-white text-brand-brown border-b-2 border-brand-brown shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <Receipt size={20} /> سجل الفواتير
+          </button>
         </div>
-      </div>
 
-      {/* 📊 كروت الإحصائيات */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {cards.map((stat, idx) => (
-          <div key={idx} className="bg-white p-6 rounded-[2rem] shadow-soft border border-gray-100 flex items-center gap-4 transition-transform hover:-translate-y-1">
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${stat.bg} ${stat.color}`}>
-              {stat.icon}
-            </div>
-            <div>
-              <p className="text-gray-500 text-xs font-bold mb-1">{stat.title}</p>
-              <h3 className="text-xl md:text-2xl font-black text-neo-text">{stat.value}</h3>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* أحدث الطلبات */}
-        <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-[2.5rem] shadow-soft border border-gray-100">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-lg font-black text-neo-text border-r-4 border-brand-brown pr-3">أحدث الطلبات</h2>
-            <Link to="/orders" className="text-xs font-bold text-brand-sand hover:text-brand-brown transition-colors flex items-center gap-1">
-              عرض الكل <ArrowLeft size={14} />
-            </Link>
-          </div>
-
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-sm text-right">
-              <thead>
-                <tr className="text-gray-400 border-b border-gray-100">
-                  <th className="pb-3 px-2 font-bold">رقم الطلب</th>
-                  <th className="pb-3 px-2 font-bold">العميل</th>
-                  <th className="pb-3 px-2 font-bold">الإجمالي</th>
-                  <th className="pb-3 px-2 font-bold text-center">الحالة</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.recentOrders.map((order: any) => (
-                  <tr key={order.id} className="border-b border-gray-50 hover:bg-[#FBF9F6] transition-colors">
-                    <td className="py-4 px-2 font-black text-neo-text">{order.order_number}</td>
-                    <td className="py-4 px-2 font-bold text-gray-700">{order.customer_name}</td>
-                    <td className="py-4 px-2 font-black text-brand-brown">{order.total_amount} ج.م</td>
-                    <td className="py-4 px-2 flex justify-center">
-                      <span className={`px-3 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 w-fit ${
-                        order.status === 'pending_review' ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'
-                      }`}>
-                        {order.status === 'pending_review' ? <Clock size={12} /> : <CheckCircle size={12} />}
-                        {order.status === 'pending_review' ? 'مراجعة' : 'مؤكد'}
-                      </span>
-                    </td>
+        <div className="p-6">
+          
+          {/* ================= 📊 تقارير الشهور والأرباح ================= */}
+          {activeTab === 'months' && (
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-right">
+                <thead>
+                  <tr className="text-gray-400 border-b border-gray-100 bg-gray-50">
+                    <th className="py-4 px-4 font-bold rounded-tr-xl">الشهر</th>
+                    <th className="py-4 px-4 font-bold text-center">القطع المباعة</th>
+                    <th className="py-4 px-4 font-bold text-left">رأس المال (تكلفة البضاعة)</th>
+                    <th className="py-4 px-4 font-bold text-left">إجمالي المبيعات (الإيرادات)</th>
+                    <th className="py-4 px-4 font-black text-left text-emerald-600 rounded-tl-xl">صافي الربح 💰</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                </thead>
+                <tbody>
+                  {monthsArray.map((month: any, idx: number) => (
+                    <tr key={idx} className="border-b border-gray-50 hover:bg-[#FBF9F6] transition-colors">
+                      <td className="py-4 px-4 font-black text-neo-text text-lg">{month.month}</td>
+                      <td className="py-4 px-4 text-center font-bold text-brand-sand">{month.itemsSold} قطعة</td>
+                      
+                      <td className="py-4 px-4 text-left font-bold text-gray-500">
+                        {month.totalCost > 0 ? `${month.totalCost.toFixed(2)} ج.م` : <span className="text-xs">غير مسجل</span>}
+                      </td>
+                      
+                      <td className="py-4 px-4 text-left font-black text-blue-600">{month.totalSales.toFixed(2)} ج.م</td>
+                      
+                      <td className="py-4 px-4 text-left">
+                        <div className="inline-flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">
+                          <TrendingUp size={16} className="text-emerald-600" />
+                          <span className="font-black text-emerald-700 text-lg">
+                            {month.totalProfit > 0 ? month.totalProfit.toFixed(2) : '-'} ج.م
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {monthsArray.length === 0 && <tr><td colSpan={5} className="text-center py-10 text-gray-400 font-bold">لا توجد مبيعات مسجلة حتى الآن.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-        {/* إجراءات سريعة */}
-        <div className="bg-white p-6 md:p-8 rounded-[2.5rem] shadow-soft border border-gray-100">
-          <h2 className="text-lg font-black text-neo-text border-r-4 border-brand-sand pr-3 mb-6">إجراءات سريعة</h2>
-          <div className="space-y-4">
-            <Link to="/add-product" className="flex items-center justify-between p-4 rounded-2xl bg-[#FBF9F6] border border-gray-100 hover:border-brand-brown transition-colors group">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-brand-brown/10 text-brand-brown flex items-center justify-center"><ShoppingBag size={18} /></div>
-                <span className="font-bold text-gray-700 group-hover:text-brand-brown transition-colors">إضافة منتج</span>
-              </div>
-              <ArrowLeft size={16} className="text-gray-400 group-hover:text-brand-brown" />
-            </Link>
-            
-            <Link to="/marketing" className="flex items-center justify-between p-4 rounded-2xl bg-[#FBF9F6] border border-gray-100 hover:border-brand-brown transition-colors group">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-brand-sand/10 text-brand-sand flex items-center justify-center">🎁</div>
-                <span className="font-bold text-gray-700 group-hover:text-brand-brown transition-colors">عجلة الحظ</span>
-              </div>
-              <ArrowLeft size={16} className="text-gray-400 group-hover:text-brand-brown" />
-            </Link>
-          </div>
-        </div>
+          {/* ================= 📅 جدول اليوميات ================= */}
+          {activeTab === 'days' && (
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-right">
+                <thead>
+                  <tr className="text-gray-400 border-b border-gray-100">
+                    <th className="pb-4 px-4 font-bold">التاريخ</th>
+                    <th className="pb-4 px-4 font-bold text-center">عدد الفواتير</th>
+                    <th className="pb-4 px-4 font-bold text-center">القطع المباعة</th>
+                    <th className="pb-4 px-4 font-bold text-left">إجمالي الدرج (الإيرادات)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {daysArray.map((day: any, idx: number) => (
+                    <tr key={idx} className="border-b border-gray-50 hover:bg-[#FBF9F6] transition-colors">
+                      <td className="py-4 px-4 font-black text-neo-text">{day.date}</td>
+                      <td className="py-4 px-4 text-center font-bold text-gray-600">{day.invoiceCount}</td>
+                      <td className="py-4 px-4 text-center font-bold text-brand-sand">{day.itemsSold}</td>
+                      <td className="py-4 px-4 text-left font-black text-blue-600">{day.totalAmount.toFixed(2)} ج.م</td>
+                    </tr>
+                  ))}
+                  {daysArray.length === 0 && <tr><td colSpan={4} className="text-center py-8 text-gray-400 font-bold">لا يوجد يوميات مسجلة.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
 
+          {/* ================= 🧾 سجل الفواتير الفردية ================= */}
+          {activeTab === 'invoices' && (
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-right">
+                <thead>
+                  <tr className="text-gray-400 border-b border-gray-100">
+                    <th className="pb-4 px-4 font-bold">رقم الفاتورة</th>
+                    <th className="pb-4 px-4 font-bold">التاريخ والوقت</th>
+                    <th className="pb-4 px-4 font-bold w-1/2">محتوى الفاتورة</th>
+                    <th className="pb-4 px-4 font-bold text-left">الإجمالي</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sales.map((sale: any) => (
+                    <tr key={sale.id} className="border-b border-gray-50 hover:bg-[#FBF9F6] transition-colors">
+                      <td className="py-4 px-4 font-mono font-black text-brand-brown text-lg">
+                        #{sale.invoice_no || 1}
+                      </td>
+                      <td className="py-4 px-4 font-bold text-neo-text text-sm">
+                        {new Date(sale.created_at).toLocaleDateString('ar-EG')} <br/>
+                        <span className="text-gray-400">{new Date(sale.created_at).toLocaleTimeString('ar-EG', { hour12: true })}</span>
+                      </td>
+                      <td className="py-4 px-4 text-sm text-gray-600">
+                        <div className="flex flex-wrap gap-1">
+                          {sale.items?.map((i: any, idx: number) => (
+                            <span key={idx} className="bg-gray-100 px-2 py-1 rounded-md text-xs font-bold border border-gray-200">
+                              {i.name} {i.size ? `(${i.size})` : ''} x{i.quantity}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 text-left font-black text-blue-600">{sale.total_amount} ج.م</td>
+                    </tr>
+                  ))}
+                  {sales.length === 0 && <tr><td colSpan={4} className="text-center py-8 text-gray-400 font-bold">لا توجد فواتير مسجلة.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
