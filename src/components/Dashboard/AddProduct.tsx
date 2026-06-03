@@ -13,7 +13,7 @@ const calculateFinalPrice = (cost: string | number) => {
   if (!num || isNaN(num)) return 0;
   
   // إضافة 60%
-  const priceWithMarkup = num + (num * 0.60);
+  const priceWithMarkup = num + (num * 0.50);
   
   // رفع الكسور لأقرب 10 (مثال: 151 أو 155 أو 159 تصبح 160)
   return Math.ceil(priceWithMarkup / 10) * 10;
@@ -239,7 +239,7 @@ export const AddProduct: React.FC = () => {
                 {product.base_price && (
                   <div className="mt-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-2 shadow-sm">
                     <span className="text-emerald-700 font-bold text-sm">
-                      سعر البيع للجمهور (بعد زيادة 60% وتقريب الكسور):
+                      سعر البيع لزبون (بعد زيادة 50% وتقريب الكسور):
                     </span>
                     <span className="text-emerald-700 font-black text-2xl bg-white px-4 py-1 rounded-lg border border-emerald-100 shadow-sm">
                       {finalSellingPrice} ج.م

@@ -220,7 +220,7 @@ export const POSDashboard: React.FC = () => {
         
         {/* اللوجو واسم المحل */}
         <div className="flex flex-col items-center justify-center border-b-2 border-black pb-3 mb-3">
-          <img src='src\assets\farook.jpeg' alt="Karizma Logo" className="w-20 h-20 object-contain grayscale mb-1" />
+          <img src='src/assets/farook.jpeg' alt="Karizma Logo" className="w-20 h-20 object-contain grayscale mb-1" />
           <h1 className="font-black text-2xl tracking-widest uppercase mb-0.5" dir="ltr">KARIZMA</h1>
           <p className="text-[12px] font-bold">Mr. Eslam Mohamed</p>
         </div>
