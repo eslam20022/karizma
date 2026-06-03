@@ -5,7 +5,7 @@ import { productService } from '../../services/productService';
 import type { Product } from '../../types';
 
 // 🛑 الباسورد السري لتعديل أو حذف المخزون
-const ADMIN_INVENTORY_PASSWORD = "123"; 
+const ADMIN_INVENTORY_PASSWORD = "eslam2244"; 
 
 export const ProductsList: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);

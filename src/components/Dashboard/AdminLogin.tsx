@@ -11,7 +11,7 @@ export const AdminLogin: React.FC = () => {
 
   // 🔐 البيانات الثابتة للأدمن (تقدر تغيرهم من هنا)
   const ADMIN_EMAIL = "islam@karizma.com";
-  const ADMIN_PASSWORD = "islam2026";
+  const ADMIN_PASSWORD = "islam2002";
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
