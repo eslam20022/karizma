@@ -7,7 +7,7 @@ import type { Product, CartItem } from '../../types';
 
 export const POSDashboard: React.FC = () => {
   const [stats, setStats] = useState<any>(null);
-  const [loadingStats, setLoadingStats] = useState(true);
+  const [, setLoadingStats] = useState(true);
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [barcodeInput, setBarcodeInput] = useState('');

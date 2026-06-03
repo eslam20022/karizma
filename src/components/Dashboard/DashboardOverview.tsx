@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Receipt, Calendar, Loader2, FileText, CalendarDays, TrendingUp, DollarSign } from 'lucide-react';
+import { Receipt, Calendar, Loader2, FileText, CalendarDays, TrendingUp} from 'lucide-react';
 import { fetchAllSalesHistory } from '../../services/dashboardService';
 
 export const DashboardOverview: React.FC = () => {
