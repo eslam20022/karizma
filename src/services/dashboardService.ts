@@ -56,3 +56,53 @@ export const fetchAllSalesHistory = async () => {
   if (error) throw new Error("فشل في جلب سجل المبيعات");
   return data || [];
 };
+
+// 4. 🗑️ دالة مسح الفاتورة وإرجاع الكميات للمخزن تلقائياً
+export const deleteInvoiceAndReturnItems = async (invoiceId: string, items: any[]) => {
+  // 1. إرجاع الكميات للمخزن
+  if (items && items.length > 0) {
+    for (const item of items) {
+      const { data: prodData } = await supabase
+        .from('products')
+        .select('stock_int')
+        .eq('id', item.id)
+        .maybeSingle();
+        
+      if (prodData) {
+        const newStock = (prodData.stock_int || 0) + item.quantity;
+        await supabase.from('products').update({ stock_int: newStock }).eq('id', item.id);
+      }
+    }
+  }
+  
+  // 2. مسح الفاتورة من جدول 'sales'
+  const { error } = await supabase.from('sales').delete().eq('id', invoiceId);
+  if (error) throw error;
+};
+
+// 5. ✏️ دالة تعديل الفاتورة وإرجاع المرتجعات للمخزن تلقائياً
+export const updateInvoiceAndReturnItems = async (invoiceId: string, newTotalAmount: number, newItems: any[], returnedItems: any[]) => {
+  // 1. border إرجاع المرتجعات فقط للمخزن
+  if (returnedItems && returnedItems.length > 0) {
+    for (const item of returnedItems) {
+      const { data: prodData } = await supabase
+        .from('products')
+        .select('stock_int')
+        .eq('id', item.id)
+        .maybeSingle();
+        
+      if (prodData) {
+        const newStock = (prodData.stock_int || 0) + item.quantity;
+        await supabase.from('products').update({ stock_int: newStock }).eq('id', item.id);
+      }
+    }
+  }
+  
+  // 2. تحديث الفاتورة في جدول 'sales' بالإجمالي الجديد والمنتجات المتبقية
+  const { error } = await supabase.from('sales').update({
+    total_amount: newTotalAmount,
+    items: newItems
+  }).eq('id', invoiceId);
+  
+  if (error) throw error;
+};

@@ -1,32 +1,48 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Receipt, Calendar, Loader2, FileText, CalendarDays, TrendingUp, Trash2, Edit } from 'lucide-react';
+import { Receipt, Calendar, Loader2, FileText, CalendarDays, TrendingUp, Trash2, Edit, X, Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { fetchAllSalesHistory } from '../../services/dashboardService';
-// 🚀 تأكد من إضافة دوال الحذف والتعديل في ملف dashboardService الخاص بك
-// import { deleteInvoice, updateInvoice } from '../../services/dashboardService'; 
+import { supabase } from '../../config/supabaseClient'; 
 
 export const DashboardOverview: React.FC = () => {
   const [sales, setSales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'invoices' | 'days' | 'months'>('months');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'invoices' | 'days' | 'months'>('days');
+  
+  const [isMonthlyUnlocked, setIsMonthlyUnlocked] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<any>(null);
+  const [returnedItems, setReturnedItems] = useState<any[]>([]);
 
-  // 💡 كلمة السر الخاصة بصلاحيات المدير (تقدر تغيرها من هنا)
+  const [customAlert, setCustomAlert] = useState<{
+    isOpen: boolean;
+    type: 'success' | 'error' | 'confirm' | 'password';
+    title: string;
+    message: string;
+    passwordTarget?: 'months' | 'delete' | 'edit';
+    targetId?: any;
+    onConfirm?: () => void;
+  }>({ isOpen: false, type: 'success', title: '', message: '' });
+
+  const [inputPassword, setInputPassword] = useState('');
+
   const ADMIN_PASSWORD = "12345";
 
   useEffect(() => {
-    const loadHistory = async () => {
-      try {
-        const data = await fetchAllSalesHistory();
-        setSales(data);
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadHistory();
   }, []);
 
-  // 🧠 1. لوجيك تجميع المبيعات حسب اليوم
+  const loadHistory = async () => {
+    try {
+      setLoading(true);
+      const data = await fetchAllSalesHistory();
+      setSales(data);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const dailySummaries = useMemo(() => {
     return sales.reduce((acc: any, sale: any) => {
       const date = new Date(sale.created_at).toLocaleDateString('ar-EG');
@@ -43,20 +59,13 @@ export const DashboardOverview: React.FC = () => {
     }, {});
   }, [sales]);
 
-  // 🧠 2. لوجيك تجميع المبيعات والأرباح حسب الشهر
   const monthlySummaries = useMemo(() => {
     return sales.reduce((acc: any, sale: any) => {
       const dateObj = new Date(sale.created_at);
       const monthKey = dateObj.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
       
       if (!acc[monthKey]) {
-        acc[monthKey] = { 
-          month: monthKey, 
-          totalSales: 0,
-          totalCost: 0,
-          totalProfit: 0,
-          itemsSold: 0 
-        };
+        acc[monthKey] = { month: monthKey, totalSales: 0, totalCost: 0, totalProfit: 0, itemsSold: 0 };
       }
       
       acc[monthKey].totalSales += Number(sale.total_amount);
@@ -77,72 +86,262 @@ export const DashboardOverview: React.FC = () => {
   const daysArray = Object.values(dailySummaries);
   const monthsArray = Object.values(monthlySummaries);
 
-  // ==========================================
-  // 🚀 دوال الحذف والتعديل للفواتير (محمية بكلمة سر)
-  // ==========================================
-  const handleDeleteInvoice = async (invoiceId: string) => {
-    // 1. طلب كلمة السر أولاً
-    const enteredPassword = window.prompt("🔒 مسح الفاتورة يتطلب صلاحيات الإدارة.\nالرجاء إدخال كلمة المرور:");
-    
-    // لو داس Cancel أو مدخلش حاجة
-    if (enteredPassword === null) return; 
-    
-    // لو كلمة السر غلط
-    if (enteredPassword !== ADMIN_PASSWORD) {
-      alert("❌ كلمة المرور خاطئة! غير مصرح لك بحذف الفاتورة.");
+  const handleTabChange = (tab: 'invoices' | 'days' | 'months') => {
+    if (tab === 'months' && !isMonthlyUnlocked) {
+      setCustomAlert({
+        isOpen: true,
+        type: 'password',
+        title: 'التقارير محمية 🔒',
+        message: 'التقارير الشهرية والأرباح محمية.\nالرجاء إدخال كلمة المرور:',
+        passwordTarget: 'months'
+      });
+    } else {
+      setActiveTab(tab);
+    }
+  };
+
+  const handleVerifyPassword = () => {
+    if (inputPassword !== ADMIN_PASSWORD) {
+      setCustomAlert({
+        isOpen: true,
+        type: 'error',
+        title: 'خطأ في التحقق',
+        message: 'كلمة المرور غير صحيحة! غير مصرح لك بإجراء هذه العملية.'
+      });
+      setInputPassword('');
       return;
     }
 
-    // 2. تأكيد الحذف
-    const confirmDelete = window.confirm("⚠️ تحذير: هل أنت متأكد من حذف هذه الفاتورة نهائياً؟\n\n(يجب التأكد من إرجاع الكميات للمخزن يدوياً أو برمجياً من السيرفر).");
-    if (!confirmDelete) return;
+    const target = customAlert.passwordTarget;
+    const targetId = customAlert.targetId;
+    setInputPassword('');
+    setCustomAlert({ isOpen: false, type: 'success', title: '', message: '' });
 
+    if (target === 'months') {
+      setIsMonthlyUnlocked(true);
+      setActiveTab('months');
+    } else if (target === 'delete') {
+      triggerConfirmDelete(targetId);
+    } else if (target === 'edit') {
+      const sale = sales.find(s => s.id === targetId);
+      setEditingInvoice(JSON.parse(JSON.stringify(sale)));
+      setReturnedItems([]);
+    }
+  };
+
+  const triggerConfirmDelete = (invoiceId: string) => {
+    setCustomAlert({
+      isOpen: true,
+      type: 'confirm',
+      title: 'تأكيد الحذف النهائي',
+      message: '⚠️ تحذير: هل أنت متأكد من حذف هذه الفاتورة نهائياً؟ سيتم إرجاع جميع محتوياتها إلى المخزن تلقائياً وتعديل الأرباح.',
+      onConfirm: () => executeDeleteInvoice(invoiceId)
+    });
+  };
+
+  const executeDeleteInvoice = async (invoiceId: string) => {
     try {
-      // 💡 قم بتفعيل هذا السطر عند إنشاء دالة الحذف في السيرفر
-      // await deleteInvoice(invoiceId);
+      setActionLoading(true);
+      const invoiceToDelete = sales.find(s => s.id === invoiceId);
       
-      // تحديث الشاشة فوراً بمسح الفاتورة
+      if (invoiceToDelete && invoiceToDelete.items) {
+        for (const item of invoiceToDelete.items) {
+          const { data: prodData } = await supabase.from('products').select('stock_int').eq('id', item.id).maybeSingle();
+          if (prodData) {
+            const newStock = (prodData.stock_int || 0) + item.quantity;
+            await supabase.from('products').update({ stock_int: newStock }).eq('id', item.id);
+          }
+        }
+      }
+
+      // 🔥 التعديل هنا: تم تغيير orders إلى sales
+      const { error } = await supabase.from('sales').delete().eq('id', invoiceId);
+      if (error) throw error;
+      
       setSales(prev => prev.filter(sale => sale.id !== invoiceId));
-      alert("✅ تم حذف الفاتورة بنجاح!");
-    } catch (error) {
-      console.error("خطأ في حذف الفاتورة", error);
-      alert("حدث خطأ أثناء محاولة الحذف.");
+      setCustomAlert({
+        isOpen: true,
+        type: 'success',
+        title: 'تم بنجاح',
+        message: '✅ تم حذف الفاتورة بالكامل وإعادة الكميات إلى المخزن بنجاح وتحديث التقارير المالية.'
+      });
+    } catch (error: any) {
+      setCustomAlert({ isOpen: true, type: 'error', title: 'فشل الإجراء', message: error.message });
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  const handleEditInvoice = (sale: any) => {
-    // 1. طلب كلمة السر أولاً
-    const enteredPassword = window.prompt("🔒 تعديل الفاتورة يتطلب صلاحيات الإدارة.\nالرجاء إدخال كلمة المرور:");
-    
-    if (enteredPassword === null) return; 
-    
-    if (enteredPassword !== ADMIN_PASSWORD) {
-      alert("❌ كلمة المرور خاطئة! غير مصرح لك بتعديل الفاتورة.");
-      return;
-    }
+  const handleRemoveItemFromInvoice = (indexToRemove: number) => {
+    const itemToRemove = editingInvoice.items[indexToRemove];
+    setReturnedItems(prev => [...prev, itemToRemove]);
+    const newTotalAmount = editingInvoice.total_amount - (itemToRemove.price * itemToRemove.quantity);
+    const newItems = editingInvoice.items.filter((_: any, idx: number) => idx !== indexToRemove);
 
-    // 2. إدخال القيمة الجديدة
-    const newAmount = window.prompt(`تعديل إجمالي الفاتورة رقم #${sale.invoice_no || 1}\nالإجمالي الحالي: ${sale.total_amount} ج.م\n\nأدخل الإجمالي الجديد:`, sale.total_amount);
-    
-    if (newAmount && !isNaN(Number(newAmount)) && Number(newAmount) !== sale.total_amount) {
-      // 💡 قم بتفعيل هذا السطر عند إنشاء دالة التعديل في السيرفر
-      // updateInvoice(sale.id, { total_amount: Number(newAmount) });
+    setEditingInvoice({
+      ...editingInvoice,
+      items: newItems,
+      total_amount: Math.max(0, newTotalAmount)
+    });
+  };
+
+  const handleSaveInvoiceChanges = async () => {
+    if (!editingInvoice) return;
+    try {
+      setActionLoading(true);
+
+      if (returnedItems.length > 0) {
+        for (const item of returnedItems) {
+          const { data: prodData } = await supabase.from('products').select('stock_int').eq('id', item.id).maybeSingle();
+          if (prodData) {
+            const newStock = (prodData.stock_int || 0) + item.quantity;
+            await supabase.from('products').update({ stock_int: newStock }).eq('id', item.id);
+          }
+        }
+      }
+
+      // 🔥 التعديل هنا: تم تغيير orders إلى sales
+      const { error } = await supabase.from('sales').update({
+        total_amount: editingInvoice.total_amount,
+        items: editingInvoice.items
+      }).eq('id', editingInvoice.id);
+
+      if (error) throw error;
+
+      setSales(prev => prev.map(s => s.id === editingInvoice.id ? editingInvoice : s));
+      setEditingInvoice(null);
+      setReturnedItems([]);
       
-      setSales(prev => prev.map(s => s.id === sale.id ? { ...s, total_amount: Number(newAmount) } : s));
-      alert("✅ تم تحديث إجمالي الفاتورة بنجاح!");
+      setCustomAlert({
+        isOpen: true,
+        type: 'success',
+        title: 'تم التحديث',
+        message: '✅ تم حفظ تعديلات الفاتورة، وخصم المرتجعات من الشهرية واليومية، وإعادة السلع إلى المخزن بنجاح!'
+      });
+    } catch (error: any) {
+      setCustomAlert({ isOpen: true, type: 'error', title: 'فشل الحفظ', message: error.message });
+    } finally {
+      setActionLoading(false);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-full">
-        <Loader2 size={40} className="text-brand-brown animate-spin" />
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-6 animate-fade-in font-['Tajawal',sans-serif] pb-10">
+    <div className="space-y-6 animate-fade-in font-['Tajawal',sans-serif] pb-10 relative">
+      
+      {/* ========================================== */}
+      {/* 👑 نافذة التنبيهات المخصصة والأنيقة (Custom Alert / Prompt System) */}
+      {/* ========================================== */}
+      {customAlert.isOpen && (
+        <div className="fixed inset-0 z-[300] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] p-6 max-w-md w-full shadow-2xl border border-gray-100 text-center animate-scale-up">
+            
+            {customAlert.type === 'success' && <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-100"><CheckCircle2 size={36} /></div>}
+            {customAlert.type === 'error' && <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-100"><X size={36} /></div>}
+            {customAlert.type === 'confirm' && <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-100"><AlertTriangle size={36} /></div>}
+            {customAlert.type === 'password' && <div className="w-16 h-16 bg-brand-brown/5 text-brand-brown rounded-full flex items-center justify-center mx-auto mb-4 border border-brand-brown/10"><Lock size={30} /></div>}
+
+            <h3 className="text-xl font-black text-gray-800 mb-2">{customAlert.title}</h3>
+            <p className="text-gray-500 font-bold text-sm leading-relaxed mb-6 whitespace-pre-line">{customAlert.message}</p>
+
+            {customAlert.type === 'password' && (
+              <input
+                type="password"
+                autoFocus
+                value={inputPassword}
+                onChange={(e) => setInputPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword()}
+                placeholder="أدخل الرقم السري للمدير..."
+                className="w-full bg-[#FBF9F6] border border-gray-200 rounded-xl px-4 py-3 outline-none text-center font-bold mb-6 focus:border-brand-brown transition-all"
+              />
+            )}
+
+            <div className="flex items-center justify-center gap-3">
+              {customAlert.type === 'password' && (
+                <>
+                  <button onClick={() => setCustomAlert({ isOpen: false, type: 'success', title: '', message: '' })} className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold transition-all">إلغاء</button>
+                  <button onClick={handleVerifyPassword} className="flex-1 py-3 bg-brand-brown text-white rounded-xl font-black hover:bg-[#603813] transition-all">تحقق وتأكيد</button>
+                </>
+              )}
+              {customAlert.type === 'confirm' && (
+                <>
+                  <button onClick={() => setCustomAlert({ isOpen: false, type: 'success', title: '', message: '' })} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-bold transition-all">تراجع</button>
+                  <button onClick={customAlert.onConfirm} disabled={actionLoading} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black hover:bg-red-700 transition-all flex justify-center items-center gap-2">
+                    {actionLoading ? <Loader2 size={18} className="animate-spin" /> : 'نعم، احذف الفاتورة'}
+                  </button>
+                </>
+              )}
+              {(customAlert.type === 'success' || customAlert.type === 'error') && (
+                <button onClick={() => setCustomAlert({ isOpen: false, type: 'success', title: '', message: '' })} className="w-full py-3 bg-brand-brown text-white rounded-xl font-black hover:bg-[#603813] transition-all">حسناً</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* 📝 نافذة تعديل الفاتورة (المرتجعات الشيك) */}
+      {/* ========================================== */}
+      {editingInvoice && (
+        <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
+          <div className="bg-white rounded-[2rem] p-6 max-w-2xl w-full shadow-2xl animate-fade-in relative max-h-[90vh] flex flex-col border border-gray-100">
+            <button onClick={() => setEditingInvoice(null)} className="absolute top-4 left-4 text-gray-400 hover:text-red-500 transition"><X size={24} /></button>
+            
+            <h2 className="text-2xl font-black mb-1 text-brand-brown flex items-center gap-2">
+              <Edit size={24} /> تعديل فاتورة #{editingInvoice.invoice_no || 1}
+            </h2>
+            <p className="text-gray-500 font-bold mb-6 text-sm">يمكنك استرجاع أي قطعة للمخزن تلقائياً بالضغط على زر الحذف بجانبها.</p>
+            
+            <div className="flex-grow overflow-y-auto custom-scrollbar pr-2 mb-4 space-y-3">
+              {editingInvoice.items.map((item: any, idx: number) => (
+                <div key={idx} className="flex justify-between items-center bg-[#FBF9F6] p-4 rounded-xl border border-gray-100">
+                  <div>
+                    <h4 className="font-black text-gray-800 text-base">{item.name}</h4>
+                    <p className="text-xs font-bold text-gray-400 mt-1">
+                      اللون: {item.color || '-'} {item.size ? `| مقاس: ${item.size}` : ''} <span className="bg-brand-brown/5 text-brand-brown text-[10px] px-1.5 py-0.5 rounded mr-2">مباع: {item.quantity} قطع</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="font-black text-brand-brown text-sm">{(item.price * item.quantity).toFixed(2)} ج.م</span>
+                    <button 
+                      onClick={() => handleRemoveItemFromInvoice(idx)}
+                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-red-100"
+                      title="استرجاع للمخزن"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {editingInvoice.items.length === 0 && (
+                <div className="text-center py-8 text-red-500 font-black text-sm">⚠️ الفاتورة أصبحت فارغة تماماً، يفضل إغلاق هذه النافذة وحذف الفاتورة بالكامل من الخارج.</div>
+              )}
+            </div>
+
+            <div className="border-t border-gray-100 pt-4 pb-2">
+              <div className="flex justify-between items-center mb-4">
+                <span className="text-base font-bold text-gray-500">الإجمالي الجديد للفاتورة:</span>
+                <span className="text-2xl font-black text-blue-600">{editingInvoice.total_amount.toFixed(2)} ج.م</span>
+              </div>
+              
+              {returnedItems.length > 0 && (
+                <div className="bg-orange-50 text-orange-700 p-3 rounded-xl mb-4 text-xs font-bold border border-orange-100">
+                  ⚠️ تنبيه: سيتم إرجاع عدد ({returnedItems.reduce((acc, item) => acc + item.quantity, 0)}) قطع إلى المخزن أوتوماتيكياً فور الحفظ.
+                </div>
+              )}
+
+              <button 
+                onClick={handleSaveInvoiceChanges}
+                disabled={actionLoading}
+                className="w-full bg-brand-brown text-white py-3.5 rounded-xl font-black text-lg hover:bg-[#603813] transition-colors flex justify-center items-center gap-2 shadow-md"
+              >
+                {actionLoading ? <Loader2 size={22} className="animate-spin" /> : 'حفظ التعديلات وتحديث السيستم 🚀'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* العناوين والترويسية الرئيسية للوحة */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-black text-neo-text flex items-center gap-2">
@@ -154,22 +353,23 @@ export const DashboardOverview: React.FC = () => {
 
       <div className="bg-white rounded-[2rem] shadow-soft border border-gray-100 overflow-hidden">
         
-        {/* ================= التابات ================= */}
+        {/* ================= التابات المحمية ================= */}
         <div className="flex border-b border-gray-100 bg-[#FBF9F6]">
           <button 
-            onClick={() => setActiveTab('months')}
+            onClick={() => handleTabChange('months')}
             className={`flex-1 py-4 font-black flex items-center justify-center gap-2 transition-all ${activeTab === 'months' ? 'bg-white text-brand-brown border-b-2 border-brand-brown shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
           >
             <CalendarDays size={20} /> التقارير الشهرية
+            {!isMonthlyUnlocked && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-md ml-1 font-bold">🔒 محمية</span>}
           </button>
           <button 
-            onClick={() => setActiveTab('days')}
+            onClick={() => handleTabChange('days')}
             className={`flex-1 py-4 font-black flex items-center justify-center gap-2 transition-all ${activeTab === 'days' ? 'bg-white text-brand-brown border-b-2 border-brand-brown shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
           >
             <Calendar size={20} /> اليوميات المقفلة
           </button>
           <button 
-            onClick={() => setActiveTab('invoices')}
+            onClick={() => handleTabChange('invoices')}
             className={`flex-1 py-4 font-black flex items-center justify-center gap-2 transition-all ${activeTab === 'invoices' ? 'bg-white text-brand-brown border-b-2 border-brand-brown shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
           >
             <Receipt size={20} /> سجل الفواتير
@@ -178,8 +378,8 @@ export const DashboardOverview: React.FC = () => {
 
         <div className="p-6">
           
-          {/* ================= 📊 تقارير الشهور والأرباح ================= */}
-          {activeTab === 'months' && (
+          {/* ================= 📊 تقارير الشهور والأرباح المشفرة ================= */}
+          {activeTab === 'months' && isMonthlyUnlocked && (
             <div className="overflow-x-auto custom-scrollbar">
               <table className="w-full text-right">
                 <thead>
@@ -277,20 +477,19 @@ export const DashboardOverview: React.FC = () => {
                       </td>
                       <td className="py-4 px-4 text-left font-black text-blue-600">{sale.total_amount} ج.م</td>
                       
-                      {/* 🚀 أزرار التعديل والحذف */}
                       <td className="py-4 px-4">
                         <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button 
-                            onClick={() => handleEditInvoice(sale)}
+                            onClick={() => setCustomAlert({ isOpen: true, type: 'password', title: 'صلاحيات الإدارة', message: 'تعديل الفاتورة والمرتجع يتطلب كلمة سر المدير:', passwordTarget: 'edit', targetId: sale.id })}
                             className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="تعديل الإجمالي"
+                            title="تعديل الفاتورة (استرجاع منتجات)"
                           >
                             <Edit size={18} />
                           </button>
                           <button 
-                            onClick={() => handleDeleteInvoice(sale.id)}
+                            onClick={() => setCustomAlert({ isOpen: true, type: 'password', title: 'صلاحيات الإدارة', message: 'حذف الفاتورة بالكامل يتطلب كلمة سر المدير:', passwordTarget: 'delete', targetId: sale.id })}
                             className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="حذف الفاتورة"
+                            title="حذف الفاتورة بالكامل"
                           >
                             <Trash2 size={18} />
                           </button>
