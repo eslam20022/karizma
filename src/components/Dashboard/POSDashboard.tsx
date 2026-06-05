@@ -3,6 +3,7 @@ import { DollarSign, Receipt, BookOpen, Search, ShoppingCart, Trash2, Printer, P
 import { Link } from 'react-router-dom';
 import { fetchDashboardStats, closeGlobalShift } from '../../services/dashboardService';
 import { productService } from '../../services/productService';
+import logoImg from '../../assets/farook.jpeg'; 
 import type { Product, CartItem } from '../../types';
 
 export const POSDashboard: React.FC = () => {
@@ -12,7 +13,7 @@ export const POSDashboard: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [barcodeInput, setBarcodeInput] = useState('');
   const [loadingCheckout, setLoadingCheckout] = useState(false);
-  const [printMode, setPrintMode] = useState<'receipt' | 'z-report'>('receipt');
+  const [printMode, setPrintMode] = useState<'receipt' | 'z-report'>('receipt'); 
   
   const [discount, setDiscount] = useState<number>(0);
 
@@ -128,24 +129,41 @@ export const POSDashboard: React.FC = () => {
   const discountAmount = subTotal * (discount / 100);
   const finalAmount = subTotal - discountAmount;
 
-  const handleCheckout = async () => {
+const handleCheckout = async () => {
     if (cart.length === 0) return;
-    setLoadingCheckout(true);
-    try {
-      await productService.processSale(cart, finalAmount);
-      setPrintMode('receipt');
-      setTimeout(() => {
-        window.print();
-        setCart([]);
-        setDiscount(0); 
-        loadData();
-      }, 100);
-    } catch (error: any) {
-      alert(error.message);
-    } finally {
-      setLoadingCheckout(false);
-      focusBarcode();
-    }
+    
+    // 1. نجهز وضع الطباعة الأول
+    setPrintMode('receipt');
+    
+    // بندي 100 ملي ثانية للمتصفح عشان يجهز كود الـ CSS بتاع الفاتورة
+    setTimeout(async () => {
+      // 2. نفتح شاشة الطباعة (الكود هيقف هنا لحد ما المستخدم يقفل شاشة الطباعة)
+      window.print();
+      
+      // 3. أول ما يرجع للسيستم، نسأله: طبعت ولا لغيت؟
+      const isPrinted = window.confirm("هل تمت الطباعة بنجاح؟\n\n- اضغط OK (حسناً) لحفظ الفاتورة وتأكيدها.\n- اضغط Cancel (إلغاء) لعدم الحفظ والعودة للتعديل.");
+
+      if (isPrinted) {
+        // المستخدم أكد الطباعة -> هنحفظ في الداتا بيز
+        setLoadingCheckout(true);
+        try {
+          await productService.processSale(cart, finalAmount);
+          
+          // تصفير الكارت وتحديث البيانات بعد الحفظ بنجاح
+          setCart([]);
+          setDiscount(0); 
+          loadData();
+        } catch (error: any) {
+          alert("حدث خطأ أثناء الحفظ في قاعدة البيانات: " + error.message);
+        } finally {
+          setLoadingCheckout(false);
+          focusBarcode();
+        }
+      } else {
+        // المستخدم لغى الطباعة -> مش هنعمل أي حاجة والداتا هتفضل قدامه
+        focusBarcode();
+      }
+    }, 100);
   };
 
   const handleCloseShift = async () => {
@@ -220,7 +238,7 @@ export const POSDashboard: React.FC = () => {
         
         {/* اللوجو واسم المحل */}
         <div className="flex flex-col items-center justify-center border-b-2 border-black pb-3 mb-3">
-          <img src='src/assets/farook.jpeg' alt="Karizma Logo" className="w-20 h-20 object-contain grayscale mb-1" />
+          <img src={logoImg}  alt="Karizma Logo" className="w-20 h-20 object-contain grayscale mb-1" />
           <h1 className="font-black text-2xl tracking-widest uppercase mb-0.5" dir="ltr">KARIZMA</h1>
           <p className="text-[12px] font-bold">Mr. Eslam Mohamed</p>
         </div>

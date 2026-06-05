@@ -1,11 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Receipt, Calendar, Loader2, FileText, CalendarDays, TrendingUp} from 'lucide-react';
+import { Receipt, Calendar, Loader2, FileText, CalendarDays, TrendingUp, Trash2, Edit } from 'lucide-react';
 import { fetchAllSalesHistory } from '../../services/dashboardService';
+// 🚀 تأكد من إضافة دوال الحذف والتعديل في ملف dashboardService الخاص بك
+// import { deleteInvoice, updateInvoice } from '../../services/dashboardService'; 
 
 export const DashboardOverview: React.FC = () => {
   const [sales, setSales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'invoices' | 'days' | 'months'>('months'); // 🚀 أضفنا تاب الشهور
+  const [activeTab, setActiveTab] = useState<'invoices' | 'days' | 'months'>('months');
+
+  // 💡 كلمة السر الخاصة بصلاحيات المدير (تقدر تغيرها من هنا)
+  const ADMIN_PASSWORD = "12345";
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -38,45 +43,95 @@ export const DashboardOverview: React.FC = () => {
     }, {});
   }, [sales]);
 
-  // 🧠 2. لوجيك تجميع المبيعات والأرباح حسب الشهر (الإضافة الجديدة)
+  // 🧠 2. لوجيك تجميع المبيعات والأرباح حسب الشهر
   const monthlySummaries = useMemo(() => {
     return sales.reduce((acc: any, sale: any) => {
-      // استخراج اسم الشهر والسنة (مثال: يونيو 2026)
       const dateObj = new Date(sale.created_at);
       const monthKey = dateObj.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
       
       if (!acc[monthKey]) {
         acc[monthKey] = { 
           month: monthKey, 
-          totalSales: 0,    // إجمالي اللي دخل الدرج
-          totalCost: 0,     // رأس مال البضاعة اللي اتباعت
-          totalProfit: 0,   // المكسب الصافي
+          totalSales: 0,
+          totalCost: 0,
+          totalProfit: 0,
           itemsSold: 0 
         };
       }
       
-      // جمع إيرادات الفواتير
       acc[monthKey].totalSales += Number(sale.total_amount);
       
-      // حساب التكلفة للمنتجات المباعة
       if (sale.items && Array.isArray(sale.items)) {
         sale.items.forEach((item: any) => {
           acc[monthKey].itemsSold += item.quantity;
-          // لو المنتج ليه سعر تكلفة بنضربه في الكمية المباعة، ولو ملوش بنعتبر تكلفتها 0
           const itemCost = (item.cost_price || 0) * item.quantity;
           acc[monthKey].totalCost += itemCost;
         });
       }
       
-      // المكسب = الإيرادات - التكلفة
       acc[monthKey].totalProfit = acc[monthKey].totalSales - acc[monthKey].totalCost;
-
       return acc;
     }, {});
   }, [sales]);
 
   const daysArray = Object.values(dailySummaries);
   const monthsArray = Object.values(monthlySummaries);
+
+  // ==========================================
+  // 🚀 دوال الحذف والتعديل للفواتير (محمية بكلمة سر)
+  // ==========================================
+  const handleDeleteInvoice = async (invoiceId: string) => {
+    // 1. طلب كلمة السر أولاً
+    const enteredPassword = window.prompt("🔒 مسح الفاتورة يتطلب صلاحيات الإدارة.\nالرجاء إدخال كلمة المرور:");
+    
+    // لو داس Cancel أو مدخلش حاجة
+    if (enteredPassword === null) return; 
+    
+    // لو كلمة السر غلط
+    if (enteredPassword !== ADMIN_PASSWORD) {
+      alert("❌ كلمة المرور خاطئة! غير مصرح لك بحذف الفاتورة.");
+      return;
+    }
+
+    // 2. تأكيد الحذف
+    const confirmDelete = window.confirm("⚠️ تحذير: هل أنت متأكد من حذف هذه الفاتورة نهائياً؟\n\n(يجب التأكد من إرجاع الكميات للمخزن يدوياً أو برمجياً من السيرفر).");
+    if (!confirmDelete) return;
+
+    try {
+      // 💡 قم بتفعيل هذا السطر عند إنشاء دالة الحذف في السيرفر
+      // await deleteInvoice(invoiceId);
+      
+      // تحديث الشاشة فوراً بمسح الفاتورة
+      setSales(prev => prev.filter(sale => sale.id !== invoiceId));
+      alert("✅ تم حذف الفاتورة بنجاح!");
+    } catch (error) {
+      console.error("خطأ في حذف الفاتورة", error);
+      alert("حدث خطأ أثناء محاولة الحذف.");
+    }
+  };
+
+  const handleEditInvoice = (sale: any) => {
+    // 1. طلب كلمة السر أولاً
+    const enteredPassword = window.prompt("🔒 تعديل الفاتورة يتطلب صلاحيات الإدارة.\nالرجاء إدخال كلمة المرور:");
+    
+    if (enteredPassword === null) return; 
+    
+    if (enteredPassword !== ADMIN_PASSWORD) {
+      alert("❌ كلمة المرور خاطئة! غير مصرح لك بتعديل الفاتورة.");
+      return;
+    }
+
+    // 2. إدخال القيمة الجديدة
+    const newAmount = window.prompt(`تعديل إجمالي الفاتورة رقم #${sale.invoice_no || 1}\nالإجمالي الحالي: ${sale.total_amount} ج.م\n\nأدخل الإجمالي الجديد:`, sale.total_amount);
+    
+    if (newAmount && !isNaN(Number(newAmount)) && Number(newAmount) !== sale.total_amount) {
+      // 💡 قم بتفعيل هذا السطر عند إنشاء دالة التعديل في السيرفر
+      // updateInvoice(sale.id, { total_amount: Number(newAmount) });
+      
+      setSales(prev => prev.map(s => s.id === sale.id ? { ...s, total_amount: Number(newAmount) } : s));
+      alert("✅ تم تحديث إجمالي الفاتورة بنجاح!");
+    }
+  };
 
   if (loading) {
     return (
@@ -141,13 +196,10 @@ export const DashboardOverview: React.FC = () => {
                     <tr key={idx} className="border-b border-gray-50 hover:bg-[#FBF9F6] transition-colors">
                       <td className="py-4 px-4 font-black text-neo-text text-lg">{month.month}</td>
                       <td className="py-4 px-4 text-center font-bold text-brand-sand">{month.itemsSold} قطعة</td>
-                      
                       <td className="py-4 px-4 text-left font-bold text-gray-500">
                         {month.totalCost > 0 ? `${month.totalCost.toFixed(2)} ج.م` : <span className="text-xs">غير مسجل</span>}
                       </td>
-                      
                       <td className="py-4 px-4 text-left font-black text-blue-600">{month.totalSales.toFixed(2)} ج.م</td>
-                      
                       <td className="py-4 px-4 text-left">
                         <div className="inline-flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">
                           <TrendingUp size={16} className="text-emerald-600" />
@@ -199,13 +251,14 @@ export const DashboardOverview: React.FC = () => {
                   <tr className="text-gray-400 border-b border-gray-100">
                     <th className="pb-4 px-4 font-bold">رقم الفاتورة</th>
                     <th className="pb-4 px-4 font-bold">التاريخ والوقت</th>
-                    <th className="pb-4 px-4 font-bold w-1/2">محتوى الفاتورة</th>
+                    <th className="pb-4 px-4 font-bold w-1/3">محتوى الفاتورة</th>
                     <th className="pb-4 px-4 font-bold text-left">الإجمالي</th>
+                    <th className="pb-4 px-4 font-bold text-center">الإجراءات</th> 
                   </tr>
                 </thead>
                 <tbody>
                   {sales.map((sale: any) => (
-                    <tr key={sale.id} className="border-b border-gray-50 hover:bg-[#FBF9F6] transition-colors">
+                    <tr key={sale.id} className="border-b border-gray-50 hover:bg-[#FBF9F6] transition-colors group">
                       <td className="py-4 px-4 font-mono font-black text-brand-brown text-lg">
                         #{sale.invoice_no || 1}
                       </td>
@@ -223,9 +276,29 @@ export const DashboardOverview: React.FC = () => {
                         </div>
                       </td>
                       <td className="py-4 px-4 text-left font-black text-blue-600">{sale.total_amount} ج.م</td>
+                      
+                      {/* 🚀 أزرار التعديل والحذف */}
+                      <td className="py-4 px-4">
+                        <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            onClick={() => handleEditInvoice(sale)}
+                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="تعديل الإجمالي"
+                          >
+                            <Edit size={18} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteInvoice(sale.id)}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="حذف الفاتورة"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
-                  {sales.length === 0 && <tr><td colSpan={4} className="text-center py-8 text-gray-400 font-bold">لا توجد فواتير مسجلة.</td></tr>}
+                  {sales.length == 0 && <tr><td colSpan={5} className="text-center py-8 text-gray-400 font-bold">لا توجد فواتير مسجلة.</td></tr>}
                 </tbody>
               </table>
             </div>
