@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Receipt, Calendar, Loader2, FileText, CalendarDays, TrendingUp, Trash2, Edit, X, Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { fetchAllSalesHistory } from '../../services/dashboardService';
-import { supabase } from '../../config/supabaseClient'; 
+import { supabase } from '../../config/supabaseClient';
 
 export const DashboardOverview: React.FC = () => {
   const [sales, setSales] = useState<any[]>([]);
   const [, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'invoices' | 'days' | 'months'>('days');
-  
+
   const [isMonthlyUnlocked, setIsMonthlyUnlocked] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<any>(null);
   const [returnedItems, setReturnedItems] = useState<any[]>([]);
@@ -51,7 +51,7 @@ export const DashboardOverview: React.FC = () => {
       }
       acc[date].totalAmount += Number(sale.total_amount);
       acc[date].invoiceCount += 1;
-      
+
       if (sale.items && Array.isArray(sale.items)) {
         acc[date].itemsSold += sale.items.reduce((sum: number, item: any) => sum + item.quantity, 0);
       }
@@ -63,13 +63,13 @@ export const DashboardOverview: React.FC = () => {
     return sales.reduce((acc: any, sale: any) => {
       const dateObj = new Date(sale.created_at);
       const monthKey = dateObj.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
-      
+
       if (!acc[monthKey]) {
         acc[monthKey] = { month: monthKey, totalSales: 0, totalCost: 0, totalProfit: 0, itemsSold: 0 };
       }
-      
+
       acc[monthKey].totalSales += Number(sale.total_amount);
-      
+
       if (sale.items && Array.isArray(sale.items)) {
         sale.items.forEach((item: any) => {
           acc[monthKey].itemsSold += item.quantity;
@@ -77,7 +77,7 @@ export const DashboardOverview: React.FC = () => {
           acc[monthKey].totalCost += itemCost;
         });
       }
-      
+
       acc[monthKey].totalProfit = acc[monthKey].totalSales - acc[monthKey].totalCost;
       return acc;
     }, {});
@@ -143,7 +143,7 @@ export const DashboardOverview: React.FC = () => {
     try {
       setActionLoading(true);
       const invoiceToDelete = sales.find(s => s.id === invoiceId);
-      
+
       if (invoiceToDelete && invoiceToDelete.items) {
         for (const item of invoiceToDelete.items) {
           const { data: prodData } = await supabase.from('products').select('stock_int').eq('id', item.id).maybeSingle();
@@ -157,7 +157,7 @@ export const DashboardOverview: React.FC = () => {
       // 🔥 التعديل هنا: تم تغيير orders إلى sales
       const { error } = await supabase.from('sales').delete().eq('id', invoiceId);
       if (error) throw error;
-      
+
       setSales(prev => prev.filter(sale => sale.id !== invoiceId));
       setCustomAlert({
         isOpen: true,
@@ -211,7 +211,7 @@ export const DashboardOverview: React.FC = () => {
       setSales(prev => prev.map(s => s.id === editingInvoice.id ? editingInvoice : s));
       setEditingInvoice(null);
       setReturnedItems([]);
-      
+
       setCustomAlert({
         isOpen: true,
         type: 'success',
@@ -227,14 +227,14 @@ export const DashboardOverview: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in font-['Tajawal',sans-serif] pb-10 relative">
-      
+
       {/* ========================================== */}
       {/* 👑 نافذة التنبيهات المخصصة والأنيقة (Custom Alert / Prompt System) */}
       {/* ========================================== */}
       {customAlert.isOpen && (
         <div className="fixed inset-0 z-[300] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-[2rem] p-6 max-w-md w-full shadow-2xl border border-gray-100 text-center animate-scale-up">
-            
+
             {customAlert.type === 'success' && <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-100"><CheckCircle2 size={36} /></div>}
             {customAlert.type === 'error' && <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-100"><X size={36} /></div>}
             {customAlert.type === 'confirm' && <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-100"><AlertTriangle size={36} /></div>}
@@ -245,13 +245,15 @@ export const DashboardOverview: React.FC = () => {
 
             {customAlert.type === 'password' && (
               <input
-                type="password"
+                type="text" /* 🔥 غيرناها لـ text عشان المتصفح ميتدخلش */
                 autoFocus
                 value={inputPassword}
                 onChange={(e) => setInputPassword(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword()}
                 placeholder="أدخل الرقم السري للمدير..."
-                className="w-full bg-[#FBF9F6] border border-gray-200 rounded-xl px-4 py-3 outline-none text-center font-bold mb-6 focus:border-brand-brown transition-all"
+                autoComplete="off" /* 🔥 منع أي اقتراحات أو حفظ سابق */
+                data-lpignore="true" /* 🔥 منع إضافات حفظ الباسوردات زي LastPass */
+                style={{ WebkitTextSecurity: 'disc' } as any} className="w-full bg-[#FBF9F6] border border-gray-200 rounded-xl px-4 py-3 outline-none text-center font-bold mb-6 focus:border-brand-brown transition-all"
               />
             )}
 
@@ -285,12 +287,12 @@ export const DashboardOverview: React.FC = () => {
         <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-[2rem] p-6 max-w-2xl w-full shadow-2xl animate-fade-in relative max-h-[90vh] flex flex-col border border-gray-100">
             <button onClick={() => setEditingInvoice(null)} className="absolute top-4 left-4 text-gray-400 hover:text-red-500 transition"><X size={24} /></button>
-            
+
             <h2 className="text-2xl font-black mb-1 text-brand-brown flex items-center gap-2">
               <Edit size={24} /> تعديل فاتورة #{editingInvoice.invoice_no || 1}
             </h2>
             <p className="text-gray-500 font-bold mb-6 text-sm">يمكنك استرجاع أي قطعة للمخزن تلقائياً بالضغط على زر الحذف بجانبها.</p>
-            
+
             <div className="flex-grow overflow-y-auto custom-scrollbar pr-2 mb-4 space-y-3">
               {editingInvoice.items.map((item: any, idx: number) => (
                 <div key={idx} className="flex justify-between items-center bg-[#FBF9F6] p-4 rounded-xl border border-gray-100">
@@ -302,7 +304,7 @@ export const DashboardOverview: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="font-black text-brand-brown text-sm">{(item.price * item.quantity).toFixed(2)} ج.م</span>
-                    <button 
+                    <button
                       onClick={() => handleRemoveItemFromInvoice(idx)}
                       className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-red-100"
                       title="استرجاع للمخزن"
@@ -322,14 +324,14 @@ export const DashboardOverview: React.FC = () => {
                 <span className="text-base font-bold text-gray-500">الإجمالي الجديد للفاتورة:</span>
                 <span className="text-2xl font-black text-blue-600">{editingInvoice.total_amount.toFixed(2)} ج.م</span>
               </div>
-              
+
               {returnedItems.length > 0 && (
                 <div className="bg-orange-50 text-orange-700 p-3 rounded-xl mb-4 text-xs font-bold border border-orange-100">
                   ⚠️ تنبيه: سيتم إرجاع عدد ({returnedItems.reduce((acc, item) => acc + item.quantity, 0)}) قطع إلى المخزن أوتوماتيكياً فور الحفظ.
                 </div>
               )}
 
-              <button 
+              <button
                 onClick={handleSaveInvoiceChanges}
                 disabled={actionLoading}
                 className="w-full bg-brand-brown text-white py-3.5 rounded-xl font-black text-lg hover:bg-[#603813] transition-colors flex justify-center items-center gap-2 shadow-md"
@@ -352,23 +354,23 @@ export const DashboardOverview: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-[2rem] shadow-soft border border-gray-100 overflow-hidden">
-        
+
         {/* ================= التابات المحمية ================= */}
         <div className="flex border-b border-gray-100 bg-[#FBF9F6]">
-          <button 
+          <button
             onClick={() => handleTabChange('months')}
             className={`flex-1 py-4 font-black flex items-center justify-center gap-2 transition-all ${activeTab === 'months' ? 'bg-white text-brand-brown border-b-2 border-brand-brown shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
           >
             <CalendarDays size={20} /> التقارير الشهرية
             {!isMonthlyUnlocked && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-md ml-1 font-bold">🔒 محمية</span>}
           </button>
-          <button 
+          <button
             onClick={() => handleTabChange('days')}
             className={`flex-1 py-4 font-black flex items-center justify-center gap-2 transition-all ${activeTab === 'days' ? 'bg-white text-brand-brown border-b-2 border-brand-brown shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
           >
             <Calendar size={20} /> اليوميات المقفلة
           </button>
-          <button 
+          <button
             onClick={() => handleTabChange('invoices')}
             className={`flex-1 py-4 font-black flex items-center justify-center gap-2 transition-all ${activeTab === 'invoices' ? 'bg-white text-brand-brown border-b-2 border-brand-brown shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
           >
@@ -377,7 +379,7 @@ export const DashboardOverview: React.FC = () => {
         </div>
 
         <div className="p-6">
-          
+
           {/* ================= 📊 تقارير الشهور والأرباح المشفرة ================= */}
           {activeTab === 'months' && isMonthlyUnlocked && (
             <div className="overflow-x-auto custom-scrollbar">
@@ -453,7 +455,7 @@ export const DashboardOverview: React.FC = () => {
                     <th className="pb-4 px-4 font-bold">التاريخ والوقت</th>
                     <th className="pb-4 px-4 font-bold w-1/3">محتوى الفاتورة</th>
                     <th className="pb-4 px-4 font-bold text-left">الإجمالي</th>
-                    <th className="pb-4 px-4 font-bold text-center">الإجراءات</th> 
+                    <th className="pb-4 px-4 font-bold text-center">الإجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -463,7 +465,7 @@ export const DashboardOverview: React.FC = () => {
                         #{sale.invoice_no || 1}
                       </td>
                       <td className="py-4 px-4 font-bold text-neo-text text-sm">
-                        {new Date(sale.created_at).toLocaleDateString('ar-EG')} <br/>
+                        {new Date(sale.created_at).toLocaleDateString('ar-EG')} <br />
                         <span className="text-gray-400">{new Date(sale.created_at).toLocaleTimeString('ar-EG', { hour12: true })}</span>
                       </td>
                       <td className="py-4 px-4 text-sm text-gray-600">
@@ -476,17 +478,17 @@ export const DashboardOverview: React.FC = () => {
                         </div>
                       </td>
                       <td className="py-4 px-4 text-left font-black text-blue-600">{sale.total_amount} ج.م</td>
-                      
+
                       <td className="py-4 px-4">
                         <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button 
+                          <button
                             onClick={() => setCustomAlert({ isOpen: true, type: 'password', title: 'صلاحيات الإدارة', message: 'تعديل الفاتورة والمرتجع يتطلب كلمة سر المدير:', passwordTarget: 'edit', targetId: sale.id })}
                             className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             title="تعديل الفاتورة (استرجاع منتجات)"
                           >
                             <Edit size={18} />
                           </button>
-                          <button 
+                          <button
                             onClick={() => setCustomAlert({ isOpen: true, type: 'password', title: 'صلاحيات الإدارة', message: 'حذف الفاتورة بالكامل يتطلب كلمة سر المدير:', passwordTarget: 'delete', targetId: sale.id })}
                             className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             title="حذف الفاتورة بالكامل"

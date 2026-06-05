@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { DollarSign, Receipt, BookOpen, Search, ShoppingCart, Trash2, Printer, Plus, Minus, Loader2, Archive, Lock, X, Shirt } from 'lucide-react';
+import { DollarSign, Receipt, BookOpen, Search, ShoppingCart, Trash2, Printer, Plus, Minus, Loader2, Archive, Lock, X, Shirt, CheckCircle2, AlertTriangle, Edit3 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchDashboardStats, closeGlobalShift } from '../../services/dashboardService';
 import { productService } from '../../services/productService';
@@ -17,8 +17,21 @@ export const POSDashboard: React.FC = () => {
   
   const [discount, setDiscount] = useState<number>(0);
 
+  // 🔥 حالة جديدة للإجمالي اليدوي (عشان تقدر تعدله)
+  const [manualFinalAmount, setManualFinalAmount] = useState<string>('0');
+
   // 🚀 حالة لفتح نافذة اختيار المتغيرات (المقاس واللون)
   const [selectedModel, setSelectedModel] = useState<{ name: string, variants: Product[] } | null>(null);
+
+  // 👑 حالة التنبيهات الشيك الجديدة (Custom Alert)
+  const [customAlert, setCustomAlert] = useState<{
+    isOpen: boolean;
+    type: 'success' | 'error' | 'confirm';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+    onCancel?: () => void;
+  }>({ isOpen: false, type: 'success', title: '', message: '' });
 
   const barcodeRef = useRef<HTMLInputElement>(null);
 
@@ -47,7 +60,6 @@ export const POSDashboard: React.FC = () => {
     setTimeout(() => barcodeRef.current?.focus(), 100);
   };
 
-  // 🚀 تجميع المنتجات بناءً على الاسم لعرضها في الكاشير
   const groupedProducts = useMemo(() => {
     const groups: { [key: string]: { name: string, price: number, totalStock: number, variants: Product[] } } = {};
     
@@ -67,7 +79,6 @@ export const POSDashboard: React.FC = () => {
   }, [products, barcodeInput]);
 
   const handleProductClick = (group: any) => {
-    // لو الموديل فيه قطعة واحدة بس أو كل القطع خلصانة، ممكن نضيفه مباشرة أو نظهر النافذة
     if (group.variants.length === 1) {
       addToCart(group.variants[0]);
     } else {
@@ -77,15 +88,14 @@ export const POSDashboard: React.FC = () => {
 
   const addToCart = (product: Product) => {
     if (product.stock_int <= 0) {
-      alert('هذا الصنف نفد من المخزن!');
-      focusBarcode();
+      setCustomAlert({ isOpen: true, type: 'error', title: 'نفدت الكمية', message: 'عذراً، هذا الصنف نفد من المخزن!' });
       return;
     }
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       if (existing) {
         if (existing.quantity >= product.stock_int) {
-          alert('الكمية المطلوبة تتجاوز المخزون!');
+          setCustomAlert({ isOpen: true, type: 'error', title: 'تجاوز المخزون', message: 'الكمية المطلوبة تتجاوز المخزون المتاح!' });
           return prev;
         }
         return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1, totalPrice: (item.quantity + 1) * item.price } : item);
@@ -94,7 +104,7 @@ export const POSDashboard: React.FC = () => {
     });
     
     setBarcodeInput('');
-    setSelectedModel(null); // قفل النافذة لو مفتوحة
+    setSelectedModel(null); 
     focusBarcode();
   };
 
@@ -102,14 +112,14 @@ export const POSDashboard: React.FC = () => {
     e.preventDefault();
     if (!barcodeInput.trim()) return;
     
-    // البحث بالباركود الدقيق أولاً (عشان الاسكانر)
     const exactProduct = products.find(p => p.barcode === barcodeInput.trim());
     
     if (exactProduct) {
       addToCart(exactProduct);
     } else {
-      // لو ملقاش باركود، هيسيب البحث شغال في الشاشة زي ما هو
-      if (groupedProducts.length === 0) alert('لا يوجد صنف بهذا الباركود!');
+      if (groupedProducts.length === 0) {
+        setCustomAlert({ isOpen: true, type: 'error', title: 'صنف غير موجود', message: 'لا يوجد صنف مسجل بهذا الباركود!' });
+      }
     }
   };
 
@@ -117,7 +127,10 @@ export const POSDashboard: React.FC = () => {
     setCart(prev => prev.map(item => {
       if (item.id === id) {
         const newQ = item.quantity + delta;
-        if (newQ > item.stock_int) { alert('تجاوزت المخزون المتاح!'); return item; }
+        if (newQ > item.stock_int) { 
+          setCustomAlert({ isOpen: true, type: 'error', title: 'تجاوز المخزون', message: 'لقد تجاوزت المخزون المتاح لهذا الصنف!' });
+          return item; 
+        }
         return { ...item, quantity: Math.max(0, newQ), totalPrice: Math.max(0, newQ) * item.price };
       }
       return item;
@@ -127,70 +140,133 @@ export const POSDashboard: React.FC = () => {
 
   const subTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
   const discountAmount = subTotal * (discount / 100);
-  const finalAmount = subTotal - discountAmount;
 
-const handleCheckout = async () => {
+  // 🔥 تحديث الإجمالي التلقائي كل ما الفاتورة تتغير أو نسبة الخصم تتغير
+  useEffect(() => {
+    const calcFinal = subTotal - discountAmount;
+    setManualFinalAmount(calcFinal > 0 ? calcFinal.toFixed(2) : '0');
+  }, [subTotal, discountAmount]);
+
+  const finalAmountToSubmit = Math.max(0, Number(manualFinalAmount) || 0);
+
+  // ==========================================
+  // 🚀 لوجيك الطباعة والدفع بالتنبيهات الشيك
+  // ==========================================
+  const handleCheckout = async () => {
     if (cart.length === 0) return;
     
-    // 1. نجهز وضع الطباعة الأول
     setPrintMode('receipt');
     
-    // بندي 100 ملي ثانية للمتصفح عشان يجهز كود الـ CSS بتاع الفاتورة
-    setTimeout(async () => {
-      // 2. نفتح شاشة الطباعة (الكود هيقف هنا لحد ما المستخدم يقفل شاشة الطباعة)
+    setTimeout(() => {
       window.print();
       
-      // 3. أول ما يرجع للسيستم، نسأله: طبعت ولا لغيت؟
-      const isPrinted = window.confirm("هل تمت الطباعة بنجاح؟\n\n- اضغط OK (حسناً) لحفظ الفاتورة وتأكيدها.\n- اضغط Cancel (إلغاء) لعدم الحفظ والعودة للتعديل.");
-
-      if (isPrinted) {
-        // المستخدم أكد الطباعة -> هنحفظ في الداتا بيز
-        setLoadingCheckout(true);
-        try {
-          await productService.processSale(cart, finalAmount);
-          
-          // تصفير الكارت وتحديث البيانات بعد الحفظ بنجاح
-          setCart([]);
-          setDiscount(0); 
-          loadData();
-        } catch (error: any) {
-          alert("حدث خطأ أثناء الحفظ في قاعدة البيانات: " + error.message);
-        } finally {
-          setLoadingCheckout(false);
+      setCustomAlert({
+        isOpen: true,
+        type: 'confirm',
+        title: 'تأكيد الفاتورة والطباعة',
+        message: 'هل تمت الطباعة بنجاح؟\n\n- اضغط (حفظ وتأكيد) لخصم الكميات وتسجيل الفاتورة.\n- اضغط (إلغاء) للعودة لشاشة التعديل.',
+        onConfirm: async () => {
+          setCustomAlert({ ...customAlert, isOpen: false });
+          setLoadingCheckout(true);
+          try {
+            await productService.processSale(cart, finalAmountToSubmit); // بنبعت الإجمالي اليدوي
+            setCart([]);
+            setDiscount(0); 
+            setManualFinalAmount('0');
+            loadData();
+          } catch (error: any) {
+            setCustomAlert({ isOpen: true, type: 'error', title: 'خطأ في الحفظ', message: "حدث خطأ أثناء الحفظ في قاعدة البيانات: " + error.message });
+          } finally {
+            setLoadingCheckout(false);
+            focusBarcode();
+          }
+        },
+        onCancel: () => {
+          setCustomAlert({ ...customAlert, isOpen: false });
           focusBarcode();
         }
-      } else {
-        // المستخدم لغى الطباعة -> مش هنعمل أي حاجة والداتا هتفضل قدامه
-        focusBarcode();
-      }
+      });
     }, 100);
   };
 
+  // ==========================================
+  // 🚀 لوجيك تقفيل الوردية بالتنبيهات الشيك
+  // ==========================================
   const handleCloseShift = async () => {
     if (!stats || stats.totalInvoices === 0) {
-      return alert("لا يوجد مبيعات في هذه الوردية لتقفيلها!");
+      setCustomAlert({ isOpen: true, type: 'error', title: 'لا يوجد مبيعات', message: 'عذراً، لا يوجد مبيعات مسجلة في هذه الوردية لتقفيلها!' });
+      return;
     }
-    const confirmClose = window.confirm("هل أنت متأكد من تقفيل الوردية وتصفير العدادات لبدء يوم جديد؟");
-    if (confirmClose) {
-      try {
+
+    setCustomAlert({
+      isOpen: true,
+      type: 'confirm',
+      title: 'تقفيل الوردية (Z-Report)',
+      message: 'هل أنت متأكد من تقفيل الوردية وتصفير العدادات لبدء يوم جديد؟',
+      onConfirm: () => {
+        setCustomAlert({ ...customAlert, isOpen: false });
         setPrintMode('z-report');
+        
         setTimeout(async () => {
           window.print();
-          await closeGlobalShift();
-          setStats({ totalSales: 0, totalInvoices: 0, itemsSold: 0, recentSales: [] });
-          setPrintMode('receipt');
-          focusBarcode();
-          alert("تم إنهاء الوردية وتصفير السيستم بنجاح لليوم الجديد! 🌅");
+          try {
+            await closeGlobalShift();
+            setStats({ totalSales: 0, totalInvoices: 0, itemsSold: 0, recentSales: [] });
+            setPrintMode('receipt');
+            
+            setCustomAlert({ isOpen: true, type: 'success', title: 'تم التقفيل بنجاح', message: 'تم إنهاء الوردية وتصفير السيستم بنجاح استعداداً لليوم الجديد! 🌅' });
+            focusBarcode();
+          } catch (e: any) {
+            setPrintMode('receipt');
+            setCustomAlert({ isOpen: true, type: 'error', title: 'خطأ في التقفيل', message: "حدث خطأ أثناء محاولة التقفيل: " + e.message });
+          }
         }, 500);
-      } catch (e: any) {
-        alert("خطأ في التقفيل: " + e.message);
-        setPrintMode('receipt');
+      },
+      onCancel: () => {
+        setCustomAlert({ ...customAlert, isOpen: false });
       }
-    }
+    });
   };
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)] gap-6 font-sans relative">
+
+      {/* ========================================== */}
+      {/* 👑 نافذة التنبيهات المخصصة (Custom Alert) للكاشير */}
+      {/* ========================================== */}
+      {customAlert.isOpen && (
+        <div className="fixed inset-0 z-[300] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
+          <div className="bg-white rounded-[2rem] p-6 max-w-md w-full shadow-2xl border border-gray-100 text-center animate-scale-up">
+            
+            {customAlert.type === 'success' && <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-100"><CheckCircle2 size={36} /></div>}
+            {customAlert.type === 'error' && <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-100"><X size={36} /></div>}
+            {customAlert.type === 'confirm' && <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-100"><AlertTriangle size={36} /></div>}
+
+            <h3 className="text-xl font-black text-gray-800 mb-2">{customAlert.title}</h3>
+            <p className="text-gray-500 font-bold text-sm leading-relaxed mb-6 whitespace-pre-line">{customAlert.message}</p>
+
+            <div className="flex items-center justify-center gap-3">
+              {customAlert.type === 'confirm' && (
+                <>
+                  <button onClick={() => {
+                    if(customAlert.onCancel) customAlert.onCancel();
+                  }} className="flex-1 py-3 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-xl font-bold transition-all">إلغاء</button>
+                  
+                  <button onClick={customAlert.onConfirm} disabled={loadingCheckout} className="flex-1 py-3 bg-brand-brown text-white rounded-xl font-black hover:bg-[#603813] transition-all flex justify-center items-center gap-2">
+                    {loadingCheckout ? <Loader2 size={18} className="animate-spin" /> : 'تأكيد وحفظ'}
+                  </button>
+                </>
+              )}
+              {(customAlert.type === 'success' || customAlert.type === 'error') && (
+                <button onClick={() => {
+                  setCustomAlert({ ...customAlert, isOpen: false });
+                  focusBarcode();
+                }} className="w-full py-3 bg-brand-brown text-white rounded-xl font-black hover:bg-[#603813] transition-all">حسناً</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================== */}
       {/* 📦 نافذة اختيار المقاس واللون (Modal) */}
@@ -236,7 +312,6 @@ const handleCheckout = async () => {
       {/* ========================================== */}
       <div className="hidden print:block print-receipt-only bg-white text-black font-sans w-full" dir="rtl">
         
-        {/* اللوجو واسم المحل */}
         <div className="flex flex-col items-center justify-center border-b-2 border-black pb-3 mb-3">
           <img src={logoImg}  alt="Karizma Logo" className="w-20 h-20 object-contain grayscale mb-1" />
           <h1 className="font-black text-2xl tracking-widest uppercase mb-0.5" dir="ltr">KARIZMA</h1>
@@ -245,7 +320,6 @@ const handleCheckout = async () => {
 
         {printMode === 'receipt' ? (
           <>
-            {/* الترويسة الجديدة (بسيطة ومش داخلة في بعضها) */}
             <div className="text-center font-black text-lg mb-2">فاتورة مبيعات</div>
             
             <div className="flex justify-between border-b-2 border-black pb-2 mb-2 text-[12px] font-bold">
@@ -259,8 +333,6 @@ const handleCheckout = async () => {
               </div>
             </div>
 
-            {/* جدول الأصناف (متظبط مساحاته عشان الكلمة تنزل سطر لو طويلة) */}
-    {/* جدول الأصناف (بعد إزالة اللون والمقاس) */}
             <table className="w-full text-right text-[12px] font-bold mb-3">
               <thead>
                 <tr className="border-b-2 border-black">
@@ -274,7 +346,6 @@ const handleCheckout = async () => {
                 {cart.map(item => (
                   <tr key={item.id} className="border-b border-gray-300 border-dashed">
                     <td className="py-2 pr-1">
-                      {/* السطر ده بس اللي هيفضل لاسم الصنف */}
                       <div className="font-black text-[12px] leading-tight">{item.name}</div>
                     </td>
                     <td className="py-2 text-center align-top">{item.quantity}</td>
@@ -301,7 +372,8 @@ const handleCheckout = async () => {
 
               <div className="flex justify-between text-lg font-black mt-2">
                 <span>الصافي المطلوب</span>
-                <span>{finalAmount.toFixed(2)} ج.م</span>
+                {/* 🖨️ طباعة الإجمالي اليدوي في الفاتورة */}
+                <span>{finalAmountToSubmit.toFixed(2)} ج.م</span>
               </div>
             </div>
 
@@ -318,7 +390,7 @@ const handleCheckout = async () => {
             </div>
           </>
         ) : (
-          /* تقرير اليومية Z-Report يفضل زي ما هو */
+          /* تقرير اليومية Z-Report */
           <>
             <div className="text-center border-b-2 border-black pb-2 mb-2 font-bold text-xs bg-gray-100">
               <p className="text-lg">Z-Report (يومية المبيعات)</p>
@@ -467,9 +539,22 @@ const handleCheckout = async () => {
               </div>
             </div>
 
-            <div className="flex justify-between items-end mb-4">
-              <span className="text-gray-300 font-bold text-xl">الإجمالي الصافي</span>
-              <span className="text-3xl font-black text-white">{finalAmount.toFixed(2)} <span className="text-lg text-gray-400">ج.م</span></span>
+            {/* 🔥 التعديل هنا: الإجمالي الصافي بقى حقل قابل للتعديل */}
+            <div className="flex justify-between items-end mb-4 group relative">
+              <span className="text-gray-300 font-bold text-xl flex items-center gap-2">
+                الإجمالي الصافي <Edit3 size={14} className="text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </span>
+              
+              <div className="flex items-end gap-1 border-b border-dashed border-gray-600 focus-within:border-brand-sand pb-1 transition-colors">
+                <input
+                  type="number"
+                  value={manualFinalAmount}
+                  onChange={(e) => setManualFinalAmount(e.target.value)}
+                  className="w-24 bg-transparent text-3xl font-black text-white outline-none text-left appearance-none"
+                  dir="ltr"
+                />
+                <span className="text-lg text-gray-400 mb-0.5">ج.م</span>
+              </div>
             </div>
 
             <button onClick={handleCheckout} disabled={cart.length === 0 || loadingCheckout} className="w-full py-4 bg-brand-brown rounded-xl font-black shadow-lg hover:bg-[#603813] transition-colors disabled:opacity-50 flex justify-center gap-2 text-lg">

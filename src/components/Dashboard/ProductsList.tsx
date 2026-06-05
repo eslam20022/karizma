@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Edit, Trash2, Loader2, Archive, Lock, X, Save, ChevronDown, ChevronUp, Package } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Loader2, Archive, Lock, X, Save, ChevronDown, ChevronUp, Package, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { productService } from '../../services/productService';
 import type { Product } from '../../types';
 
 // 🛑 الباسورد السري لتعديل أو حذف المخزون
-const ADMIN_INVENTORY_PASSWORD = "eslam2244"; 
+const ADMIN_INVENTORY_PASSWORD = "eslam2244";
 
 export const ProductsList: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -15,11 +15,20 @@ export const ProductsList: React.FC = () => {
   // حالة فتح وإغلاق الموديلات (لعرض المتغيرات)
   const [expandedModels, setExpandedModels] = useState<string[]>([]);
 
-  // --- حالات الحماية (الباسورد) ---
+  // --- حالة التنبيهات الشيك الجديدة (Custom Alert) ---
+  const [customAlert, setCustomAlert] = useState<{
+    isOpen: boolean;
+    type: 'success' | 'error' | 'confirm' | 'password';
+    title: string;
+    message: string;
+    passwordTarget?: 'edit' | 'delete';
+    targetProduct?: Product | null;
+    onConfirm?: () => void;
+  }>({ isOpen: false, type: 'success', title: '', message: '' });
+
+  const [inputPassword, setInputPassword] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [passwordInput, setPasswordInput] = useState('');
-  const [pendingAction, setPendingAction] = useState<{ type: 'edit' | 'delete', product: Product | null } | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   // --- حالات تعديل المخزون والتفاصيل للقطعة ---
   const [showEditModal, setShowEditModal] = useState(false);
@@ -45,7 +54,7 @@ export const ProductsList: React.FC = () => {
   };
 
   const toggleModel = (modelName: string) => {
-    setExpandedModels(prev => 
+    setExpandedModels(prev =>
       prev.includes(modelName) ? prev.filter(name => name !== modelName) : [...prev, modelName]
     );
   };
@@ -53,7 +62,7 @@ export const ProductsList: React.FC = () => {
   // 🚀 تجميع المنتجات بناءً على الاسم (Group By Name)
   const groupedProducts = useMemo(() => {
     const groups: { [key: string]: { name: string, category: string, price: number, totalStock: number, variants: Product[] } } = {};
-    
+
     products.forEach(p => {
       if (!groups[p.name]) {
         groups[p.name] = {
@@ -68,13 +77,10 @@ export const ProductsList: React.FC = () => {
       groups[p.name].totalStock += (p.stock_int || 0);
     });
 
-    // فلترة التجميعات بناءً على البحث
     const search = searchTerm.toLowerCase();
     return Object.values(groups).filter(group => {
-      // يطابق اسم الموديل
       if (group.name.toLowerCase().includes(search)) return true;
-      // أو يطابق أي باركود، لون، أو مقاس جوا الموديل
-      return group.variants.some(v => 
+      return group.variants.some(v =>
         (v.barcode && v.barcode.includes(search)) ||
         (v.color && v.color.toLowerCase().includes(search)) ||
         (v.size && v.size.toLowerCase().includes(search))
@@ -82,54 +88,99 @@ export const ProductsList: React.FC = () => {
     });
   }, [products, searchTerm]);
 
+  // ==========================================
+  // 🔒 طلب كلمة السر والتحقق
+  // ==========================================
   const requireAuth = (type: 'edit' | 'delete', product: Product) => {
     if (type === 'delete') {
-      setPendingAction({ type, product });
-      setShowAuthModal(true);
+      // الحذف دائماً بيطلب تأكيد وباسورد
+      setCustomAlert({
+        isOpen: true,
+        type: 'password',
+        title: 'حذف صنف نهائياً',
+        message: `أدخل كلمة المرور لتأكيد حذف المتغير\n(كود: ${product.barcode})`,
+        passwordTarget: type,
+        targetProduct: product
+      });
     } else {
+      // التعديل: لو معاه صلاحية يفتح علطول، لو لأ يطلب الباسورد
       if (isAuthorized) {
-        executeAction(type, product);
+        openEditModal(product);
       } else {
-        setPendingAction({ type, product });
-        setShowAuthModal(true);
+        setCustomAlert({
+          isOpen: true,
+          type: 'password',
+          title: 'صلاحية الإدارة',
+          message: 'أدخل كلمة المرور لتعديل كمية القطعة',
+          passwordTarget: type,
+          targetProduct: product
+        });
       }
     }
   };
 
-  const handleAuthSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (passwordInput === ADMIN_INVENTORY_PASSWORD) {
-      if (pendingAction?.type !== 'delete') setIsAuthorized(true);
-      
-      setShowAuthModal(false);
-      setPasswordInput('');
-      
-      if (pendingAction?.product) executeAction(pendingAction.type, pendingAction.product);
-    } else {
-      alert("كلمة المرور غير صحيحة!");
-      setPasswordInput('');
+  const handleVerifyPassword = () => {
+    if (inputPassword !== ADMIN_INVENTORY_PASSWORD) {
+      setCustomAlert({
+        isOpen: true, type: 'error', title: 'خطأ في التحقق', message: 'كلمة المرور غير صحيحة!'
+      });
+      setInputPassword('');
+      return;
+    }
+
+    const target = customAlert.passwordTarget;
+    const product = customAlert.targetProduct;
+
+    // إعطاء صلاحية مستمرة للتعديل طالما هو فاتح الشاشة (عشان ميكتبوش كل شوية)
+    if (target !== 'delete') setIsAuthorized(true);
+
+    setInputPassword('');
+    setCustomAlert({ isOpen: false, type: 'success', title: '', message: '' });
+
+    if (product) {
+      if (target === 'delete') {
+        // نفتحله رسالة التأكيد الشيك بعد الباسورد مباشرة
+        setTimeout(() => {
+          setCustomAlert({
+            isOpen: true,
+            type: 'confirm',
+            title: 'تأكيد الحذف النهائي',
+            message: `⚠️ تحذير: هل أنت متأكد من حذف هذا المتغير نهائياً؟\nالكود: ${product.barcode}`,
+            onConfirm: () => executeDelete(product.id)
+          });
+        }, 100);
+      } else if (target === 'edit') {
+        openEditModal(product);
+      }
     }
   };
 
-  const executeAction = (type: 'edit' | 'delete', product: Product) => {
-    if (type === 'edit') {
-      setSelectedProduct(product);
-      setNewMainStock(product.main_stock !== undefined ? product.main_stock : product.stock_int);
-      setNewRemainingStock(product.stock_int);
-      setShowEditModal(true);
-    } else if (type === 'delete') {
-      handleDelete(product.id);
-    }
-    setPendingAction(null);
+  // ==========================================
+  // 🚀 تنفيذ الأكشنز (تعديل - حذف)
+  // ==========================================
+  const openEditModal = (product: Product) => {
+    setSelectedProduct(product);
+    setNewMainStock(product.main_stock !== undefined ? product.main_stock : product.stock_int);
+    setNewRemainingStock(product.stock_int);
+    setShowEditModal(true);
   };
 
-  const handleDelete = async (id: string) => {
+  const executeDelete = async (id: string) => {
     try {
+      setActionLoading(true);
       await productService.deleteProduct(id);
       setProducts(products.filter(p => p.id !== id));
-      window.dispatchEvent(new Event('stockUpdated')); 
-    } catch (error) {
-      alert("حدث خطأ أثناء الحذف");
+      window.dispatchEvent(new Event('stockUpdated'));
+      
+      setCustomAlert({
+        isOpen: true, type: 'success', title: 'تم الحذف', message: 'تم حذف الصنف من المخزون بنجاح.'
+      });
+    } catch (error: any) {
+      setCustomAlert({
+        isOpen: true, type: 'error', title: 'فشل الحذف', message: error.message || 'حدث خطأ أثناء الحذف'
+      });
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -137,27 +188,31 @@ export const ProductsList: React.FC = () => {
     if (!selectedProduct) return;
     const mainVal = Number(newMainStock);
     const remainingVal = Number(newRemainingStock);
-    
+
     if (isNaN(mainVal) || mainVal < 0 || isNaN(remainingVal) || remainingVal < 0) {
-      return alert("رجاء إدخال كميات صحيحة!");
+      setCustomAlert({ isOpen: true, type: 'error', title: 'خطأ', message: 'رجاء إدخال كميات صحيحة!' });
+      return;
     }
 
     setUpdating(true);
     try {
-      await productService.updateProduct(selectedProduct.id, { 
-        main_stock: mainVal, 
+      await productService.updateProduct(selectedProduct.id, {
+        main_stock: mainVal,
         stock_int: remainingVal,
       });
-      
-      setProducts(products.map(p => p.id === selectedProduct.id ? 
+
+      setProducts(products.map(p => p.id === selectedProduct.id ?
         { ...p, main_stock: mainVal, stock_int: remainingVal } : p
       ));
-      
+
       setShowEditModal(false);
-      alert("تم تحديث كمية القطعة بنجاح!");
-      window.dispatchEvent(new Event('stockUpdated'));  
+      window.dispatchEvent(new Event('stockUpdated'));
+      
+      setCustomAlert({
+        isOpen: true, type: 'success', title: 'تم التحديث', message: 'تم تحديث كمية القطعة بنجاح!'
+      });
     } catch (error: any) {
-      alert(error.message);
+      setCustomAlert({ isOpen: true, type: 'error', title: 'خطأ', message: error.message });
     } finally {
       setUpdating(false);
     }
@@ -172,38 +227,57 @@ export const ProductsList: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in font-['Tajawal',sans-serif] pb-10">
-      
+    <div className="space-y-6 animate-fade-in font-['Tajawal',sans-serif] pb-10 relative">
+
       {/* ========================================== */}
-      {/* 🔒 شاشة تأكيد الباسورد */}
+      {/* 👑 نافذة التنبيهات المخصصة والأنيقة (Custom Alert / Prompt System) */}
       {/* ========================================== */}
-      {showAuthModal && (
-        <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl animate-fade-in relative">
-            <button onClick={() => setShowAuthModal(false)} className="absolute top-4 left-4 text-gray-400 hover:text-red-500 transition"><X size={24} /></button>
-            <div className="flex justify-center mb-4">
-              <div className={`w-16 h-16 flex items-center justify-center rounded-2xl ${pendingAction?.type === 'delete' ? 'bg-red-50 text-red-600' : 'bg-brand-sand/20 text-brand-brown'}`}>
-                {pendingAction?.type === 'delete' ? <Trash2 size={32} /> : <Lock size={32} />}
-              </div>
-            </div>
-            <h2 className="text-2xl font-black text-center mb-2">
-              {pendingAction?.type === 'delete' ? 'حذف صنف نهائياً' : 'صلاحية الإدارة'}
-            </h2>
-            <p className="text-gray-500 text-sm text-center mb-6 font-bold">
-              {pendingAction?.type === 'delete' 
-                ? `أدخل كلمة المرور لتأكيد حذف المتغير (كود: ${pendingAction.product?.barcode})` 
-                : 'أدخل كلمة المرور لتعديل كمية القطعة'}
-            </p>
-            <form onSubmit={handleAuthSubmit}>
-              <input 
-                type="password" autoFocus required value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)}
-                placeholder="كلمة المرور..."
-                className={`w-full bg-[#FBF9F6] border border-gray-200 rounded-xl px-4 py-4 mb-4 outline-none text-center text-xl tracking-[0.5em] font-bold transition-all ${pendingAction?.type === 'delete' ? 'focus:border-red-500' : 'focus:border-brand-brown'}`}
+      {customAlert.isOpen && (
+        <div className="fixed inset-0 z-[300] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] p-6 max-w-md w-full shadow-2xl border border-gray-100 text-center animate-scale-up">
+            
+            {customAlert.type === 'success' && <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-100"><CheckCircle2 size={36} /></div>}
+            {customAlert.type === 'error' && <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-100"><X size={36} /></div>}
+            {customAlert.type === 'confirm' && <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-100"><AlertTriangle size={36} /></div>}
+            {customAlert.type === 'password' && <div className="w-16 h-16 bg-brand-brown/5 text-brand-brown rounded-full flex items-center justify-center mx-auto mb-4 border border-brand-brown/10"><Lock size={30} /></div>}
+
+            <h3 className="text-xl font-black text-gray-800 mb-2">{customAlert.title}</h3>
+            <p className="text-gray-500 font-bold text-sm leading-relaxed mb-6 whitespace-pre-line">{customAlert.message}</p>
+
+            {/* 🚀 حقل إدخال الباسورد (بخاصية mask-password اللي عملناها) */}
+            {customAlert.type === 'password' && (
+          <input
+                type="text" /* 🔥 غيرناها لـ text عشان المتصفح ميتدخلش */
+                autoFocus
+                value={inputPassword}
+                onChange={(e) => setInputPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword()}
+                placeholder="أدخل الرقم السري للمدير..."
+                autoComplete="off" /* 🔥 منع أي اقتراحات أو حفظ سابق */
+                data-lpignore="true" /* 🔥 منع إضافات حفظ الباسوردات زي LastPass */
+                style={{ WebkitTextSecurity: 'disc' } as any} className="w-full bg-[#FBF9F6] border border-gray-200 rounded-xl px-4 py-3 outline-none text-center font-bold mb-6 focus:border-brand-brown transition-all"
               />
-              <button type="submit" className={`w-full text-white font-black py-4 rounded-xl transition ${pendingAction?.type === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-brown hover:bg-[#603813]'}`}>
-                {pendingAction?.type === 'delete' ? 'تأكيد الحذف' : 'تأكيد الصلاحية'}
-              </button>
-            </form>
+            )}
+
+            <div className="flex items-center justify-center gap-3">
+              {customAlert.type === 'password' && (
+                <>
+                  <button onClick={() => setCustomAlert({ isOpen: false, type: 'success', title: '', message: '' })} className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold transition-all">إلغاء</button>
+                  <button onClick={handleVerifyPassword} className="flex-1 py-3 bg-brand-brown text-white rounded-xl font-black hover:bg-[#603813] transition-all">تحقق وتأكيد</button>
+                </>
+              )}
+              {customAlert.type === 'confirm' && (
+                <>
+                  <button onClick={() => setCustomAlert({ isOpen: false, type: 'success', title: '', message: '' })} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-bold transition-all">تراجع</button>
+                  <button onClick={customAlert.onConfirm} disabled={actionLoading} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black hover:bg-red-700 transition-all flex justify-center items-center gap-2">
+                    {actionLoading ? <Loader2 size={18} className="animate-spin" /> : 'نعم، احذف الصنف'}
+                  </button>
+                </>
+              )}
+              {(customAlert.type === 'success' || customAlert.type === 'error') && (
+                <button onClick={() => setCustomAlert({ isOpen: false, type: 'success', title: '', message: '' })} className="w-full py-3 bg-brand-brown text-white rounded-xl font-black hover:bg-[#603813] transition-all">حسناً</button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -215,9 +289,9 @@ export const ProductsList: React.FC = () => {
         <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-[2rem] p-8 max-w-md w-full shadow-2xl animate-fade-in relative">
             <button onClick={() => setShowEditModal(false)} className="absolute top-4 left-4 text-gray-400 hover:text-red-500 transition"><X size={24} /></button>
-            <h2 className="text-xl font-black mb-1 border-b pb-4">تعديل كمية القطعة</h2>
-            
-            <div className="bg-gray-50 p-3 rounded-xl mt-4 mb-6 border border-gray-100 flex justify-between items-center">
+            <h2 className="text-xl font-black mb-1 border-b pb-4 text-gray-800">تعديل كمية القطعة</h2>
+
+            <div className="bg-[#FBF9F6] p-3 rounded-xl mt-4 mb-6 border border-gray-100 flex justify-between items-center">
               <div>
                 <p className="text-gray-800 font-black">{selectedProduct.name}</p>
                 <p className="text-sm font-bold text-gray-500 mt-1">مقاس: {selectedProduct.size} | لون: {selectedProduct.color}</p>
@@ -230,20 +304,20 @@ export const ProductsList: React.FC = () => {
             <div className="space-y-4 mb-6">
               <div>
                 <label className="block text-sm font-bold text-gray-400 mb-2">الكمية الرئيسية (إجمالي المشتريات):</label>
-                <input 
+                <input
                   type="number" required value={newMainStock} onChange={(e) => setNewMainStock(e.target.value)}
-                  className="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-gray-400 text-center text-xl font-black text-gray-600"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-gray-400 text-center text-xl font-black text-gray-600"
                 />
               </div>
               <div>
                 <label className="block text-sm font-bold text-brand-brown mb-2">الكمية المتبقية (المتاح للبيع الآن):</label>
-                <input 
+                <input
                   type="number" required value={newRemainingStock} onChange={(e) => setNewRemainingStock(e.target.value)}
-                  className="w-full bg-white border-2 border-brand-brown/30 rounded-xl px-4 py-3 outline-none focus:border-brand-brown text-center text-xl font-black text-brand-brown"
+                  className="w-full bg-white border-2 border-brand-brown/30 rounded-xl px-4 py-3 outline-none focus:border-brand-brown text-center text-xl font-black text-brand-brown shadow-sm"
                 />
               </div>
             </div>
-            
+
             <button onClick={handleSaveStock} disabled={updating} className="w-full bg-brand-brown text-white font-black py-4 rounded-xl hover:bg-[#603813] transition flex items-center justify-center gap-2 shadow-md">
               {updating ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
               حفظ التعديلات
@@ -269,9 +343,9 @@ export const ProductsList: React.FC = () => {
         <div className="flex w-full md:w-auto gap-3">
           <div className="relative w-full md:w-72">
             <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="ابحث باسم الموديل، اللون، المقاس، الكود..." 
+            <input
+              type="text"
+              placeholder="ابحث باسم الموديل، اللون، المقاس، الكود..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full bg-white border border-gray-200 rounded-xl pr-12 pl-4 py-3 outline-none focus:border-brand-sand focus:ring-2 focus:ring-brand-sand/20 text-sm font-bold text-neo-text transition-all shadow-sm"
@@ -287,7 +361,7 @@ export const ProductsList: React.FC = () => {
       {/* 📦 قائمة الموديلات والمتغيرات */}
       {/* ========================================== */}
       <div className="bg-white p-2 md:p-6 rounded-[2rem] shadow-soft border border-gray-100">
-        
+
         <div className="hidden md:grid grid-cols-5 text-gray-400 font-bold px-6 pb-4 border-b border-gray-100 text-right text-sm">
           <div className="col-span-2">اسم الموديل</div>
           <div>القسم</div>
@@ -301,8 +375,7 @@ export const ProductsList: React.FC = () => {
 
             return (
               <div key={group.name} className="border border-gray-200 rounded-2xl overflow-hidden transition-all bg-white hover:border-brand-brown/30">
-                {/* 🔽 سطر الموديل الرئيسي (قابل للضغط) */}
-                <div 
+                <div
                   onClick={() => toggleModel(group.name)}
                   className="grid grid-cols-1 md:grid-cols-5 items-center p-4 cursor-pointer hover:bg-[#FBF9F6] transition-colors gap-4 md:gap-0"
                 >
@@ -325,7 +398,6 @@ export const ProductsList: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 📋 جدول المتغيرات (يظهر عند الضغط) */}
                 {isExpanded && (
                   <div className="bg-gray-50 border-t border-gray-200 p-4 md:p-6 animate-fade-in">
                     <div className="overflow-x-auto custom-scrollbar">
