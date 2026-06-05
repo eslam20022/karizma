@@ -5,7 +5,7 @@ import { supabase } from '../../config/supabaseClient';
 
 export const DashboardOverview: React.FC = () => {
   const [sales, setSales] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'invoices' | 'days' | 'months'>('days');
   
