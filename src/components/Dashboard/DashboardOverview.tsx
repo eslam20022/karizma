@@ -25,7 +25,7 @@ export const DashboardOverview: React.FC = () => {
 
   const [inputPassword, setInputPassword] = useState('');
 
-  const ADMIN_PASSWORD = "12345";
+  const ADMIN_PASSWORD = "eslam2244";
 
   useEffect(() => {
     loadHistory();
