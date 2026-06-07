@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowRight, Plus, Save, Loader2, CheckCircle, AlertCircle, Hash, Printer } from 'lucide-react';
+import { ArrowRight, Plus, Save, Loader2, CheckCircle, AlertCircle, Hash, Printer, Percent } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { productService } from '../../services/productService';
 import JsBarcode from 'jsbarcode';
@@ -7,13 +7,14 @@ import JsBarcode from 'jsbarcode';
 // 🚀 دالة توليد 4 أرقام عشوائية لاسم الموديل
 const generateRandomName = () => Math.floor(1000 + Math.random() * 9000).toString();
 
-// 🚀 دالة حساب السعر الذكية (زيادة 60% ثم الرفع لأقرب 10)
-const calculateFinalPrice = (cost: string | number) => {
+// 🚀 دالة حساب السعر الذكية (بنسبة متغيرة يحددها المستخدم)
+const calculateFinalPrice = (cost: string | number, markupPercent: string | number) => {
   const num = Number(cost);
-  if (!num || isNaN(num)) return 0;
+  const markup = Number(markupPercent);
+  if (!num || isNaN(num) || isNaN(markup)) return 0;
   
-  // إضافة 60%
-  const priceWithMarkup = num + (num * 0.50);
+  // إضافة النسبة المئوية
+  const priceWithMarkup = num + (num * (markup / 100));
   
   // رفع الكسور لأقرب 10 (مثال: 151 أو 155 أو 159 تصبح 160)
   return Math.ceil(priceWithMarkup / 10) * 10;
@@ -24,6 +25,9 @@ export const AddProduct: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [fetchingCode, setFetchingCode] = useState(true);
   const [message, setMessage] = useState({ text: '', isError: false });
+
+  // 🔥 حالة جديدة للتحكم في نسبة الربح المضافة (الافتراضي 50%)
+  const [markupPercentage, setMarkupPercentage] = useState<number | string>(50);
 
   // 1. البيانات الأساسية للمنتج
   const [product, setProduct] = useState({ 
@@ -41,8 +45,8 @@ export const AddProduct: React.FC = () => {
   const barcodeSvgRef = useRef<SVGSVGElement>(null);
   const [printData, setPrintData] = useState<any>(null);
 
-  // السعر النهائي اللي هيتعرض ويتحفظ
-  const finalSellingPrice = calculateFinalPrice(product.base_price);
+  // السعر النهائي اللي هيتعرض ويتحفظ بناءً على التكلفة ونسبة الربح
+  const finalSellingPrice = calculateFinalPrice(product.base_price, markupPercentage);
 
   // تحديث رسمة الباركود لما نختار صنف للطباعة
   useEffect(() => {
@@ -53,7 +57,7 @@ export const AddProduct: React.FC = () => {
           lineColor: "#000",
           width: 2,
           height: 40,
-          displayValue: false, // 🚀 تعديل: تم جعلها false لإخفاء الأرقام من تحت خطوط الباركود
+          displayValue: false, // لإخفاء الأرقام من تحت خطوط الباركود
           fontSize: 12,
         });
       } catch (error) {
@@ -115,7 +119,7 @@ export const AddProduct: React.FC = () => {
   };
 
   const removeVariantRow = (index: number) => {
-    if (variants.length === 1) return alert("يجب أن يحتوي المنتج على متغير واحد على الأجل");
+    if (variants.length === 1) return alert("يجب أن يحتوي المنتج على متغير واحد على الأقل");
     const newVariants = variants.filter((_, i) => i !== index);
     setVariants(newVariants);
   };
@@ -162,12 +166,10 @@ export const AddProduct: React.FC = () => {
       {/* 🖨 Rose ملصق الطباعة المخفي للباركود */}
       {/* ========================================== */}
       <div className="hidden print:flex print-receipt-only flex-col items-center justify-center bg-white text-black text-center">
-        {/* 🚀 التعديل هنا: إضافة البوردر الأسود وتصغير العرض الكلي وضغط العناصر بالكامل */}
         <div className="border border-black p-1 rounded-md inline-block w-[36mm] max-w-[36mm] overflow-hidden bg-white">
           <h2 className="font-black text-[11px] leading-none mb-0.5 tracking-wider uppercase">KARIZMA</h2>
           <p className="font-black text-[10px] leading-none mb-0.5 truncate w-full px-0.5">{printData?.name || 'اسم القطعة'}</p>
           
-          {/* 🚀 تعديل: تم مسح اللون والإبقاء على المقاس فقط */}
           {printData?.size && (
             <p className="font-black text-[10px] leading-none mb-0.5 text-gray-900">
               مقاس: {printData.size}
@@ -232,21 +234,32 @@ export const AddProduct: React.FC = () => {
                 </select>
               </div>
               
-              <div className="md:col-span-3">
-                <label className={labelClass}>سعر الشراء / التكلفة (ج.م)</label>
-                <input required type="number" step="0.01" value={product.base_price} onChange={e => setProduct({...product, base_price: e.target.value})} className={inputClass} placeholder="أدخل تكلفة القطعة هنا..." />
+              {/* 🔥 قسم السعر ونسبة الربح الجديد */}
+              <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+                <div>
+                  <label className={labelClass}>سعر الشراء / التكلفة (ج.م)</label>
+                  <input required type="number" step="0.01" value={product.base_price} onChange={e => setProduct({...product, base_price: e.target.value})} className={inputClass} placeholder="أدخل تكلفة القطعة هنا..." />
+                </div>
                 
-                {product.base_price && (
-                  <div className="mt-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-2 shadow-sm">
-                    <span className="text-emerald-700 font-bold text-sm">
-                      سعر البيع لزبون (بعد زيادة 50% وتقريب الكسور):
-                    </span>
-                    <span className="text-emerald-700 font-black text-2xl bg-white px-4 py-1 rounded-lg border border-emerald-100 shadow-sm">
-                      {finalSellingPrice} ج.م
-                    </span>
+                <div>
+                  <label className={labelClass}>نسبة الزيادة / الربح (%)</label>
+                  <div className="relative">
+                    <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                    <input required type="number" min="0" step="1" value={markupPercentage} onChange={e => setMarkupPercentage(e.target.value)} className={`${inputClass} pl-10`} placeholder="50" />
                   </div>
-                )}
+                </div>
               </div>
+
+              {product.base_price && (
+                <div className="md:col-span-3 mt-1 p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-2 shadow-sm">
+                  <span className="text-emerald-700 font-bold text-sm">
+                    سعر البيع المقترح للزبون (بعد زيادة {markupPercentage}% وتقريب الكسور):
+                  </span>
+                  <span className="text-emerald-700 font-black text-2xl bg-white px-4 py-1 rounded-lg border border-emerald-100 shadow-sm">
+                    {finalSellingPrice} ج.م
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
