@@ -35,6 +35,8 @@ export const ProductsList: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [newMainStock, setNewMainStock] = useState<number | string>('');
   const [newRemainingStock, setNewRemainingStock] = useState<number | string>('');
+  // 🔥 حالة جديدة لتعديل السعر
+  const [newPrice, setNewPrice] = useState<number | string>('');
   const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
@@ -93,7 +95,6 @@ export const ProductsList: React.FC = () => {
   // ==========================================
   const requireAuth = (type: 'edit' | 'delete', product: Product) => {
     if (type === 'delete') {
-      // الحذف دائماً بيطلب تأكيد وباسورد
       setCustomAlert({
         isOpen: true,
         type: 'password',
@@ -103,7 +104,6 @@ export const ProductsList: React.FC = () => {
         targetProduct: product
       });
     } else {
-      // التعديل: لو معاه صلاحية يفتح علطول، لو لأ يطلب الباسورد
       if (isAuthorized) {
         openEditModal(product);
       } else {
@@ -111,7 +111,7 @@ export const ProductsList: React.FC = () => {
           isOpen: true,
           type: 'password',
           title: 'صلاحية الإدارة',
-          message: 'أدخل كلمة المرور لتعديل كمية القطعة',
+          message: 'أدخل كلمة المرور لتعديل بيانات القطعة',
           passwordTarget: type,
           targetProduct: product
         });
@@ -131,7 +131,6 @@ export const ProductsList: React.FC = () => {
     const target = customAlert.passwordTarget;
     const product = customAlert.targetProduct;
 
-    // إعطاء صلاحية مستمرة للتعديل طالما هو فاتح الشاشة (عشان ميكتبوش كل شوية)
     if (target !== 'delete') setIsAuthorized(true);
 
     setInputPassword('');
@@ -139,7 +138,6 @@ export const ProductsList: React.FC = () => {
 
     if (product) {
       if (target === 'delete') {
-        // نفتحله رسالة التأكيد الشيك بعد الباسورد مباشرة
         setTimeout(() => {
           setCustomAlert({
             isOpen: true,
@@ -162,6 +160,8 @@ export const ProductsList: React.FC = () => {
     setSelectedProduct(product);
     setNewMainStock(product.main_stock !== undefined ? product.main_stock : product.stock_int);
     setNewRemainingStock(product.stock_int);
+    // 🔥 تحميل السعر الحالي للقطعة
+    setNewPrice(product.price || 0);
     setShowEditModal(true);
   };
 
@@ -188,28 +188,32 @@ export const ProductsList: React.FC = () => {
     if (!selectedProduct) return;
     const mainVal = Number(newMainStock);
     const remainingVal = Number(newRemainingStock);
+    const priceVal = Number(newPrice); // 🔥 تحويل السعر الجديد لرقم
 
-    if (isNaN(mainVal) || mainVal < 0 || isNaN(remainingVal) || remainingVal < 0) {
-      setCustomAlert({ isOpen: true, type: 'error', title: 'خطأ', message: 'رجاء إدخال كميات صحيحة!' });
+    if (isNaN(mainVal) || mainVal < 0 || isNaN(remainingVal) || remainingVal < 0 || isNaN(priceVal) || priceVal < 0) {
+      setCustomAlert({ isOpen: true, type: 'error', title: 'خطأ', message: 'رجاء إدخال أرقام صحيحة للكميات والسعر!' });
       return;
     }
 
     setUpdating(true);
     try {
+      // 🔥 تحديث الكميات والسعر في الداتا بيز
       await productService.updateProduct(selectedProduct.id, {
         main_stock: mainVal,
         stock_int: remainingVal,
+        price: priceVal, 
       });
 
+      // 🔥 تحديث السعر والكميات في الشاشة
       setProducts(products.map(p => p.id === selectedProduct.id ?
-        { ...p, main_stock: mainVal, stock_int: remainingVal } : p
+        { ...p, main_stock: mainVal, stock_int: remainingVal, price: priceVal } : p
       ));
 
       setShowEditModal(false);
       window.dispatchEvent(new Event('stockUpdated'));
       
       setCustomAlert({
-        isOpen: true, type: 'success', title: 'تم التحديث', message: 'تم تحديث كمية القطعة بنجاح!'
+        isOpen: true, type: 'success', title: 'تم التحديث', message: 'تم تحديث بيانات القطعة بنجاح!'
       });
     } catch (error: any) {
       setCustomAlert({ isOpen: true, type: 'error', title: 'خطأ', message: error.message });
@@ -244,18 +248,18 @@ export const ProductsList: React.FC = () => {
             <h3 className="text-xl font-black text-gray-800 mb-2">{customAlert.title}</h3>
             <p className="text-gray-500 font-bold text-sm leading-relaxed mb-6 whitespace-pre-line">{customAlert.message}</p>
 
-            {/* 🚀 حقل إدخال الباسورد (بخاصية mask-password اللي عملناها) */}
             {customAlert.type === 'password' && (
-          <input
-                type="text" /* 🔥 غيرناها لـ text عشان المتصفح ميتدخلش */
+              <input
+                type="text"
                 autoFocus
                 value={inputPassword}
                 onChange={(e) => setInputPassword(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword()}
                 placeholder="أدخل الرقم السري للمدير..."
-                autoComplete="off" /* 🔥 منع أي اقتراحات أو حفظ سابق */
-                data-lpignore="true" /* 🔥 منع إضافات حفظ الباسوردات زي LastPass */
-                style={{ WebkitTextSecurity: 'disc' } as any} className="w-full bg-[#FBF9F6] border border-gray-200 rounded-xl px-4 py-3 outline-none text-center font-bold mb-6 focus:border-brand-brown transition-all"
+                autoComplete="off"
+                data-lpignore="true"
+                style={{ WebkitTextSecurity: 'disc' } as any} 
+                className="w-full bg-[#FBF9F6] border border-gray-200 rounded-xl px-4 py-3 outline-none text-center font-bold mb-6 focus:border-brand-brown transition-all"
               />
             )}
 
@@ -283,13 +287,13 @@ export const ProductsList: React.FC = () => {
       )}
 
       {/* ========================================== */}
-      {/* ✏️ شاشة تعديل المخزون للمتغير الواحد */}
+      {/* ✏️ شاشة تعديل بيانات المخزون والسعر للمتغير */}
       {/* ========================================== */}
       {showEditModal && selectedProduct && (
         <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-[2rem] p-8 max-w-md w-full shadow-2xl animate-fade-in relative">
             <button onClick={() => setShowEditModal(false)} className="absolute top-4 left-4 text-gray-400 hover:text-red-500 transition"><X size={24} /></button>
-            <h2 className="text-xl font-black mb-1 border-b pb-4 text-gray-800">تعديل كمية القطعة</h2>
+            <h2 className="text-xl font-black mb-1 border-b pb-4 text-gray-800">تعديل بيانات القطعة</h2>
 
             <div className="bg-[#FBF9F6] p-3 rounded-xl mt-4 mb-6 border border-gray-100 flex justify-between items-center">
               <div>
@@ -302,18 +306,29 @@ export const ProductsList: React.FC = () => {
             </div>
 
             <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-sm font-bold text-gray-400 mb-2">الكمية الرئيسية (إجمالي المشتريات):</label>
-                <input
-                  type="number" required value={newMainStock} onChange={(e) => setNewMainStock(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-gray-400 text-center text-xl font-black text-gray-600"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-400 mb-2">الكمية الرئيسية:</label>
+                  <input
+                    type="number" required value={newMainStock} onChange={(e) => setNewMainStock(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-gray-400 text-center text-xl font-black text-gray-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-brand-brown mb-2">المتاح للبيع الآن:</label>
+                  <input
+                    type="number" required value={newRemainingStock} onChange={(e) => setNewRemainingStock(e.target.value)}
+                    className="w-full bg-white border-2 border-brand-brown/30 rounded-xl px-4 py-3 outline-none focus:border-brand-brown text-center text-xl font-black text-brand-brown shadow-sm"
+                  />
+                </div>
               </div>
+              
+              {/* 🔥 حقل السعر الجديد */}
               <div>
-                <label className="block text-sm font-bold text-brand-brown mb-2">الكمية المتبقية (المتاح للبيع الآن):</label>
+                <label className="block text-sm font-bold text-emerald-600 mb-2 mt-2">سعر البيع للزبون (ج.م):</label>
                 <input
-                  type="number" required value={newRemainingStock} onChange={(e) => setNewRemainingStock(e.target.value)}
-                  className="w-full bg-white border-2 border-brand-brown/30 rounded-xl px-4 py-3 outline-none focus:border-brand-brown text-center text-xl font-black text-brand-brown shadow-sm"
+                  type="number" required value={newPrice} onChange={(e) => setNewPrice(e.target.value)}
+                  className="w-full bg-emerald-50 border-2 border-emerald-200 rounded-xl px-4 py-3 outline-none focus:border-emerald-500 text-center text-2xl font-black text-emerald-700 shadow-sm"
                 />
               </div>
             </div>
@@ -407,6 +422,7 @@ export const ProductsList: React.FC = () => {
                             <th className="py-3 px-4 font-black">الكود (SKU)</th>
                             <th className="py-3 px-4 font-black text-center">المقاس</th>
                             <th className="py-3 px-4 font-black text-center">اللون</th>
+                            <th className="py-3 px-4 font-black text-center">السعر</th> {/* 🔥 عمود السعر */}
                             <th className="py-3 px-4 font-black text-center">الكمية (أساسي / متبقي)</th>
                             <th className="py-3 px-4 font-black text-center">إجراءات</th>
                           </tr>
@@ -417,6 +433,8 @@ export const ProductsList: React.FC = () => {
                               <td className="py-3 px-4 font-mono font-bold text-brand-brown">{variant.barcode}</td>
                               <td className="py-3 px-4 text-center font-bold text-gray-700">{variant.size || '-'}</td>
                               <td className="py-3 px-4 text-center font-bold text-gray-700">{variant.color || '-'}</td>
+                              {/* 🔥 عرض السعر هنا ليكون واضح */}
+                              <td className="py-3 px-4 text-center font-black text-emerald-600">{variant.price} ج.م</td>
                               <td className="py-3 px-4 text-center">
                                 <div className="inline-flex items-center gap-2 bg-[#FBF9F6] px-3 py-1 rounded-lg border border-gray-200">
                                   <span className="text-gray-400 font-bold text-sm" title="الكمية الرئيسية">{variant.main_stock !== undefined ? variant.main_stock : variant.stock_int}</span>
@@ -425,7 +443,7 @@ export const ProductsList: React.FC = () => {
                                 </div>
                               </td>
                               <td className="py-3 px-4 flex justify-center gap-2">
-                                <button onClick={() => requireAuth('edit', variant)} className="p-2 text-blue-500 hover:bg-blue-50 hover:shadow-sm rounded-lg transition" title="تعديل الكمية">
+                                <button onClick={() => requireAuth('edit', variant)} className="p-2 text-blue-500 hover:bg-blue-50 hover:shadow-sm rounded-lg transition" title="تعديل الكمية والسعر">
                                   <Edit size={16} />
                                 </button>
                                 <button onClick={() => requireAuth('delete', variant)} className="p-2 text-red-500 hover:bg-red-50 hover:shadow-sm rounded-lg transition" title="حذف القطعة">
