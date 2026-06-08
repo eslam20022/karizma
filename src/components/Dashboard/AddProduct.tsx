@@ -26,10 +26,10 @@ export const AddProduct: React.FC = () => {
   const [fetchingCode, setFetchingCode] = useState(true);
   const [message, setMessage] = useState({ text: '', isError: false });
 
-  // 🔥 حالة جديدة للتحكم في نسبة الربح المضافة (الافتراضي 50%)
+  // 🔥 حالة للتحكم في نسبة الربح المضافة (الافتراضي 50%)
   const [markupPercentage, setMarkupPercentage] = useState<number | string>(50);
 
-  // 1. البيانات الأساسية للمنتج
+  // 1. البيانات الأساسية للمنتج (الاسم المبدئي عشوائي وسيتأكد السيستم من عدم تكراره)
   const [product, setProduct] = useState({ 
     name: generateRandomName(), 
     base_price: '', 
@@ -87,23 +87,38 @@ export const AddProduct: React.FC = () => {
     }, 150);
   };
 
-  // جلب آخر كود لتوليد الأكواد الجديدة تلقائياً
+  // 🚀 التعديل هنا: جلب البيانات لفحص الكود واسم الموديل معاً
   useEffect(() => {
-    const fetchNextCode = async () => {
+    const fetchInitialData = async () => {
       try {
-        const products = await productService.fetchProducts();
-        const codes = products.map(p => parseInt(p.barcode)).filter(n => !isNaN(n));
-        const maxCode = codes.length > 0 ? Math.max(...codes) : 99;
+        const existingProducts = await productService.fetchProducts();
         
+        // 1. توليد كود (SKU) جديد غير مكرر
+        const codes = existingProducts.map(p => parseInt(p.barcode)).filter(n => !isNaN(n));
+        const maxCode = codes.length > 0 ? Math.max(...codes) : 99;
         updateVariant(0, 'sku', (maxCode + 1).toString());
+
+        // 2. التحقق من عدم تكرار الاسم العشوائي
+        const existingNames = existingProducts.map(p => p.name.trim());
+        let safeName = product.name;
+        // لو الاسم العشوائي طلع موجود قبل كده، هيفضل يولد اسم جديد لحد ما يجيب واحد فريد
+        while (existingNames.includes(safeName)) {
+          safeName = generateRandomName();
+        }
+        
+        // تحديث الاسم لو كان مكرر واتغير
+        if (safeName !== product.name) {
+          setProduct(prev => ({ ...prev, name: safeName }));
+        }
+
       } catch (error) {
-        console.error("خطأ في جلب الكود", error);
+        console.error("خطأ في جلب البيانات المبدئية", error);
         updateVariant(0, 'sku', '100');
       } finally {
         setFetchingCode(false);
       }
     };
-    fetchNextCode();
+    fetchInitialData();
   }, []);
 
   const addVariantRow = () => {
@@ -124,6 +139,9 @@ export const AddProduct: React.FC = () => {
     setVariants(newVariants);
   };
 
+  // ==========================================
+  // 🚀 دالة الحفظ مع جدار الحماية ضد تكرار الأسماء والأكواد
+  // ==========================================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -132,15 +150,40 @@ export const AddProduct: React.FC = () => {
     try {
       if (variants.length === 0 || !variants[0].size) throw new Error("يجب إضافة مقاس واحد على الأقل!");
       
+      // 1. التحقق من عدم وجود تكرار للأكواد داخل الفورم الحالي نفسه
+      const skusInForm = variants.map(v => v.sku.trim());
+      const uniqueSkusInForm = new Set(skusInForm);
+      if (skusInForm.length !== uniqueSkusInForm.size) {
+        throw new Error("يوجد تكرار في الأكواد (SKU) داخل الموديل الحالي! يجب أن يكون لكل مقاس ولون كود فريد.");
+      }
+
+      // جلب جميع المنتجات من المخزن للتحقق
+      const existingProducts = await productService.fetchProducts();
+      
+      // 2. 🛡️ التحقق من عدم تكرار اسم الموديل (لمنع الدمج)
+      const existingNames = existingProducts.map(p => p.name.trim());
+      if (existingNames.includes(product.name.trim())) {
+        throw new Error(`اسم الموديل (${product.name}) مسجل بالفعل! يرجى تغييره لتجنب دمج المنتجات معاً.`);
+      }
+
+      // 3. 🛡️ التحقق من عدم تكرار الأكواد في المخزن
+      const existingBarcodes = existingProducts.map(p => p.barcode.trim());
       for (const variant of variants) {
         if (!variant.sku) throw new Error("تأكد من إدخال الأكواد (SKU) لكل القطع");
         
+        if (existingBarcodes.includes(variant.sku.trim())) {
+          throw new Error(`الكود (${variant.sku}) مسجل بالفعل لمنتج آخر في المخزن! يرجى تغييره.`);
+        }
+      }
+      
+      // 4. إذا كانت جميع البيانات سليمة وفريدة، نقوم بالحفظ
+      for (const variant of variants) {
         await productService.addProduct({
-          name: product.name,
+          name: product.name.trim(),
           category: product.category,
           price: finalSellingPrice, 
           cost_price: Number(product.base_price),
-          barcode: variant.sku,
+          barcode: variant.sku.trim(),
           size: variant.size.toUpperCase(),
           color: variant.colorName || 'بدون لون',
           stock_int: Number(variant.stock_quantity),
@@ -148,10 +191,11 @@ export const AddProduct: React.FC = () => {
       }
 
       setMessage({ text: 'تم إضافة الموديل بجميع متغيراته للمخزن بنجاح!', isError: false });
-      setTimeout(() => navigate('/pos'), 1500);
+      setTimeout(() => navigate('/inventory'), 1500); // 🚀 خليتها تروح لصفحة المخزون عشان تتأكد إنه نزل صح
 
     } catch (err: any) {
       setMessage({ text: err.message, isError: true });
+      window.scrollTo({ top: 0, behavior: 'smooth' }); // رفع الشاشة لأعلى لرؤية الخطأ
     } finally {
       setLoading(false);
     }
@@ -234,7 +278,6 @@ export const AddProduct: React.FC = () => {
                 </select>
               </div>
               
-              {/* 🔥 قسم السعر ونسبة الربح الجديد */}
               <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
                 <div>
                   <label className={labelClass}>سعر الشراء / التكلفة (ج.م)</label>
