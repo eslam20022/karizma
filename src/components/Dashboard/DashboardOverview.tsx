@@ -1,18 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Receipt, Calendar, Loader2, FileText, CalendarDays, TrendingUp, Trash2, Edit, X, Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Receipt, Calendar, Loader2, FileText, CalendarDays, TrendingUp, Trash2, Edit, X, Lock, CheckCircle2, AlertTriangle, Edit3, Plus, Minus } from 'lucide-react';
 import { fetchAllSalesHistory } from '../../services/dashboardService';
 import { supabase } from '../../config/supabaseClient';
 
 export const DashboardOverview: React.FC = () => {
   const [sales, setSales] = useState<any[]>([]);
-  const [, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'invoices' | 'days' | 'months'>('days');
 
   const [isMonthlyUnlocked, setIsMonthlyUnlocked] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<any>(null);
   const [returnedItems, setReturnedItems] = useState<any[]>([]);
-
   const [customAlert, setCustomAlert] = useState<{
     isOpen: boolean;
     type: 'success' | 'error' | 'confirm' | 'password';
@@ -125,7 +124,6 @@ export const DashboardOverview: React.FC = () => {
     } else if (target === 'edit') {
       const sale = sales.find(s => s.id === targetId);
       setEditingInvoice(JSON.parse(JSON.stringify(sale)));
-      setReturnedItems([]);
     }
   };
 
@@ -154,7 +152,6 @@ export const DashboardOverview: React.FC = () => {
         }
       }
 
-      // 🔥 التعديل هنا: تم تغيير orders إلى sales
       const { error } = await supabase.from('sales').delete().eq('id', invoiceId);
       if (error) throw error;
 
@@ -172,16 +169,34 @@ export const DashboardOverview: React.FC = () => {
     }
   };
 
-  const handleRemoveItemFromInvoice = (indexToRemove: number) => {
-    const itemToRemove = editingInvoice.items[indexToRemove];
-    setReturnedItems(prev => [...prev, itemToRemove]);
-    const newTotalAmount = editingInvoice.total_amount - (itemToRemove.price * itemToRemove.quantity);
-    const newItems = editingInvoice.items.filter((_: any, idx: number) => idx !== indexToRemove);
-
+  // 🚀 دالة تعديل الصنف (الكمية أو السعر) داخل الفاتورة
+  const handleUpdateItemInInvoice = (index: number, field: 'quantity' | 'price', value: number) => {
+    const newItems = [...editingInvoice.items];
+    newItems[index] = { ...newItems[index], [field]: value };
+    
+    // إعادة حساب الإجمالي التلقائي للفاتورة بعد التعديل
+    const newTotalAmount = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    
     setEditingInvoice({
       ...editingInvoice,
       items: newItems,
-      total_amount: Math.max(0, newTotalAmount)
+      total_amount: newTotalAmount
+    });
+  };
+const handleRemoveItemFromInvoice = (indexToRemove: number) => {
+    // 💡 ضفنا السطرين دول عشان القطعة اللي تتمسح ترجع للمخزن
+    const itemToRemove = editingInvoice.items[indexToRemove];
+    setReturnedItems(prev => [...prev, itemToRemove]);
+
+    const newItems = editingInvoice.items.filter((_: any, idx: number) => idx !== indexToRemove);
+    
+    // 🔥 التعديل هنا: ضفنا (sum: number, item: any) بدل (sum, item)
+    const newTotalAmount = newItems.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+    
+    setEditingInvoice({
+      ...editingInvoice,
+      items: newItems,
+      total_amount: newTotalAmount
     });
   };
 
@@ -190,17 +205,34 @@ export const DashboardOverview: React.FC = () => {
     try {
       setActionLoading(true);
 
-      if (returnedItems.length > 0) {
-        for (const item of returnedItems) {
-          const { data: prodData } = await supabase.from('products').select('stock_int').eq('id', item.id).maybeSingle();
+      // 1. حساب الفروقات في المخزون (الكميات اللي هترجع أو تتسحب)
+      const originalInvoice = sales.find(s => s.id === editingInvoice.id);
+      const stockUpdates: { id: string; diff: number }[] = [];
+
+      if (originalInvoice && originalInvoice.items) {
+        originalInvoice.items.forEach((origItem: any) => {
+          const editedItem = editingInvoice.items.find((i: any) => i.id === origItem.id);
+          const editedQty = editedItem ? editedItem.quantity : 0;
+          const returnedQty = origItem.quantity - editedQty;
+          
+          if (returnedQty !== 0) {
+            stockUpdates.push({ id: origItem.id, diff: returnedQty });
+          }
+        });
+      }
+
+      // 2. تطبيق التحديثات على المخزن
+      if (stockUpdates.length > 0) {
+        for (const update of stockUpdates) {
+          const { data: prodData } = await supabase.from('products').select('stock_int').eq('id', update.id).maybeSingle();
           if (prodData) {
-            const newStock = (prodData.stock_int || 0) + item.quantity;
-            await supabase.from('products').update({ stock_int: newStock }).eq('id', item.id);
+            const newStock = (prodData.stock_int || 0) + update.diff;
+            await supabase.from('products').update({ stock_int: newStock }).eq('id', update.id);
           }
         }
       }
 
-      // 🔥 التعديل هنا: تم تغيير orders إلى sales
+      // 3. تحديث الفاتورة بالإجمالي الجديد والأسعار/الكميات المعدلة
       const { error } = await supabase.from('sales').update({
         total_amount: editingInvoice.total_amount,
         items: editingInvoice.items
@@ -210,13 +242,12 @@ export const DashboardOverview: React.FC = () => {
 
       setSales(prev => prev.map(s => s.id === editingInvoice.id ? editingInvoice : s));
       setEditingInvoice(null);
-      setReturnedItems([]);
 
       setCustomAlert({
         isOpen: true,
         type: 'success',
         title: 'تم التحديث',
-        message: '✅ تم حفظ تعديلات الفاتورة، وخصم المرتجعات من الشهرية واليومية، وإعادة السلع إلى المخزن بنجاح!'
+        message: '✅ تم حفظ التعديلات وإعادة ضبط المخزون والتقارير المالية بنجاح!'
       });
     } catch (error: any) {
       setCustomAlert({ isOpen: true, type: 'error', title: 'فشل الحفظ', message: error.message });
@@ -225,11 +256,33 @@ export const DashboardOverview: React.FC = () => {
     }
   };
 
+  // حساب القطع المرتجعة كلياً أو جزئياً لعرضها في رسالة التحذير
+  const calculateReturnedItemsCount = () => {
+    if (!editingInvoice) return 0;
+    const originalInvoice = sales.find(s => s.id === editingInvoice.id);
+    if (!originalInvoice) return 0;
+    
+    return originalInvoice.items.reduce((sum: number, origItem: any) => {
+      const editedItem = editingInvoice.items.find((i: any) => i.id === origItem.id);
+      const editedQty = editedItem ? editedItem.quantity : 0;
+      const diff = origItem.quantity - editedQty;
+      return sum + (diff > 0 ? diff : 0);
+    }, 0);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-full">
+        <Loader2 size={40} className="text-brand-brown animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in font-['Tajawal',sans-serif] pb-10 relative">
 
       {/* ========================================== */}
-      {/* 👑 نافذة التنبيهات المخصصة والأنيقة (Custom Alert / Prompt System) */}
+      {/* 👑 نافذة التنبيهات المخصصة والأنيقة */}
       {/* ========================================== */}
       {customAlert.isOpen && (
         <div className="fixed inset-0 z-[300] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -245,14 +298,14 @@ export const DashboardOverview: React.FC = () => {
 
             {customAlert.type === 'password' && (
               <input
-                type="text" /* 🔥 غيرناها لـ text عشان المتصفح ميتدخلش */
+                type="text"
                 autoFocus
                 value={inputPassword}
                 onChange={(e) => setInputPassword(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword()}
                 placeholder="أدخل الرقم السري للمدير..."
-                autoComplete="off" /* 🔥 منع أي اقتراحات أو حفظ سابق */
-                data-lpignore="true" /* 🔥 منع إضافات حفظ الباسوردات زي LastPass */
+                autoComplete="off"
+                data-lpignore="true"
                 style={{ WebkitTextSecurity: 'disc' } as any} className="w-full bg-[#FBF9F6] border border-gray-200 rounded-xl px-4 py-3 outline-none text-center font-bold mb-6 focus:border-brand-brown transition-all"
               />
             )}
@@ -281,35 +334,61 @@ export const DashboardOverview: React.FC = () => {
       )}
 
       {/* ========================================== */}
-      {/* 📝 نافذة تعديل الفاتورة (المرتجعات الشيك) */}
+      {/* 📝 نافذة تعديل الفاتورة (متطورة جداً) */}
       {/* ========================================== */}
       {editingInvoice && (
         <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
-          <div className="bg-white rounded-[2rem] p-6 max-w-2xl w-full shadow-2xl animate-fade-in relative max-h-[90vh] flex flex-col border border-gray-100">
+          <div className="bg-white rounded-[2rem] p-6 max-w-3xl w-full shadow-2xl animate-fade-in relative max-h-[90vh] flex flex-col border border-gray-100">
             <button onClick={() => setEditingInvoice(null)} className="absolute top-4 left-4 text-gray-400 hover:text-red-500 transition"><X size={24} /></button>
 
             <h2 className="text-2xl font-black mb-1 text-brand-brown flex items-center gap-2">
               <Edit size={24} /> تعديل فاتورة #{editingInvoice.invoice_no || 1}
             </h2>
-            <p className="text-gray-500 font-bold mb-6 text-sm">يمكنك استرجاع أي قطعة للمخزن تلقائياً بالضغط على زر الحذف بجانبها.</p>
+            <p className="text-gray-500 font-bold mb-6 text-sm">يمكنك تعديل كمية كل قطعة وسعرها، والسيستم سيقوم بضبط المخزون والأرباح تلقائياً.</p>
 
             <div className="flex-grow overflow-y-auto custom-scrollbar pr-2 mb-4 space-y-3">
               {editingInvoice.items.map((item: any, idx: number) => (
-                <div key={idx} className="flex justify-between items-center bg-[#FBF9F6] p-4 rounded-xl border border-gray-100">
-                  <div>
+                <div key={idx} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-[#FBF9F6] p-4 rounded-xl border border-gray-100 gap-4 sm:gap-0">
+                  <div className="flex-1">
                     <h4 className="font-black text-gray-800 text-base">{item.name}</h4>
                     <p className="text-xs font-bold text-gray-400 mt-1">
-                      اللون: {item.color || '-'} {item.size ? `| مقاس: ${item.size}` : ''} <span className="bg-brand-brown/5 text-brand-brown text-[10px] px-1.5 py-0.5 rounded mr-2">مباع: {item.quantity} قطع</span>
+                      اللون: {item.color || '-'} {item.size ? `| مقاس: ${item.size}` : ''} 
                     </p>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <span className="font-black text-brand-brown text-sm">{(item.price * item.quantity).toFixed(2)} ج.م</span>
+                  
+                  <div className="flex items-center gap-2 flex-wrap">
+                    
+                    {/* 🔥 تعديل السعر للقطعة الواحدة */}
+                    <div className="flex items-center bg-white border border-gray-200 rounded-lg px-2 focus-within:border-brand-brown h-10">
+                      <input
+                        type="number"
+                        value={item.price === 0 ? '' : item.price}
+                        onChange={(e) => handleUpdateItemInInvoice(idx, 'price', Number(e.target.value) || 0)}
+                        className="w-16 outline-none text-center font-black text-brand-brown"
+                        placeholder="السعر"
+                      />
+                      <span className="text-[10px] text-gray-400 font-bold">ج.م</span>
+                    </div>
+
+                    {/* 🔥 تعديل الكمية (بأزرار) */}
+                    <div className="flex items-center bg-white rounded-lg border border-gray-200 h-10">
+                      <button onClick={() => handleUpdateItemInInvoice(idx, 'quantity', Math.max(1, item.quantity - 1))} className="px-3 text-red-500 hover:bg-red-50 h-full rounded-r-lg"><Minus size={16} /></button>
+                      <input
+                        type="number"
+                        value={item.quantity}
+                        onChange={(e) => handleUpdateItemInInvoice(idx, 'quantity', Math.max(1, Number(e.target.value) || 1))}
+                        className="w-10 h-full outline-none text-center font-black text-gray-800 border-x border-gray-100"
+                      />
+                      <button onClick={() => handleUpdateItemInInvoice(idx, 'quantity', item.quantity + 1)} className="px-3 text-green-600 hover:bg-green-50 h-full rounded-l-lg"><Plus size={16} /></button>
+                    </div>
+
+                    {/* حذف الصنف نهائياً من الفاتورة */}
                     <button
                       onClick={() => handleRemoveItemFromInvoice(idx)}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-red-100"
-                      title="استرجاع للمخزن"
+                      className="h-10 w-10 flex justify-center items-center text-red-500 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors border border-red-100 mr-2"
+                      title="استرجاع القطعة بالكامل للمخزن"
                     >
-                      <Trash2 size={16} />
+                      <Trash2 size={18} />
                     </button>
                   </div>
                 </div>
@@ -320,14 +399,26 @@ export const DashboardOverview: React.FC = () => {
             </div>
 
             <div className="border-t border-gray-100 pt-4 pb-2">
-              <div className="flex justify-between items-center mb-4">
-                <span className="text-base font-bold text-gray-500">الإجمالي الجديد للفاتورة:</span>
-                <span className="text-2xl font-black text-blue-600">{editingInvoice.total_amount.toFixed(2)} ج.م</span>
+              
+              <div className="flex justify-between items-center mb-4 group bg-blue-50 p-4 rounded-xl border border-blue-100">
+                <span className="text-base font-bold text-blue-800 flex items-center gap-2">
+                  الإجمالي النهائي للفاتورة: <Edit3 size={16} className="opacity-50" />
+                </span>
+                <div className="flex items-end gap-1 border-b border-dashed border-blue-300 focus-within:border-blue-600 pb-1 transition-colors">
+                  <input
+                    type="number"
+                    value={editingInvoice.total_amount === 0 ? '' : editingInvoice.total_amount}
+                    onChange={(e) => setEditingInvoice({...editingInvoice, total_amount: Number(e.target.value) || 0})}
+                    className="w-24 bg-transparent text-2xl font-black text-blue-700 outline-none text-center appearance-none"
+                    dir="ltr"
+                  />
+                  <span className="text-lg font-black text-blue-500 mb-0.5">ج.م</span>
+                </div>
               </div>
 
-              {returnedItems.length > 0 && (
+              {calculateReturnedItemsCount() > 0 && (
                 <div className="bg-orange-50 text-orange-700 p-3 rounded-xl mb-4 text-xs font-bold border border-orange-100">
-                  ⚠️ تنبيه: سيتم إرجاع عدد ({returnedItems.reduce((acc, item) => acc + item.quantity, 0)}) قطع إلى المخزن أوتوماتيكياً فور الحفظ.
+                  ⚠️ تنبيه: سيتم إرجاع عدد ({calculateReturnedItemsCount()}) قطع إلى المخزن أوتوماتيكياً فور الحفظ بناءً على تعديلات الكمية.
                 </div>
               )}
 
@@ -484,7 +575,7 @@ export const DashboardOverview: React.FC = () => {
                           <button
                             onClick={() => setCustomAlert({ isOpen: true, type: 'password', title: 'صلاحيات الإدارة', message: 'تعديل الفاتورة والمرتجع يتطلب كلمة سر المدير:', passwordTarget: 'edit', targetId: sale.id })}
                             className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="تعديل الفاتورة (استرجاع منتجات)"
+                            title="تعديل الفاتورة (استرجاع منتجات وتعديل السعر والكمية)"
                           >
                             <Edit size={18} />
                           </button>
