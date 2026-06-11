@@ -11,7 +11,7 @@ export const DashboardOverview: React.FC = () => {
 
   const [isMonthlyUnlocked, setIsMonthlyUnlocked] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<any>(null);
-  const [returnedItems, setReturnedItems] = useState<any[]>([]);
+  const [, setReturnedItems] = useState<any[]>([]);
   const [customAlert, setCustomAlert] = useState<{
     isOpen: boolean;
     type: 'success' | 'error' | 'confirm' | 'password';
